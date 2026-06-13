@@ -1,0 +1,163 @@
+# RNF-02: Circuit Breaker + connection pool limits para todos os servicos do mesh.
+#
+# outlierDetection (ejecao de instancia):
+#   consecutive5xxErrors: 5         -> 5 erros 5xx consecutivos
+#   interval: 30s                   -> janela de avaliacao
+#   baseEjectionTime: 30s           -> tempo minimo ejetado (~ self-healing)
+#   maxEjectionPercent: 50          -> nunca mais de 50% dos hosts ejetados
+#
+# connectionPool: limita filas, evita saturacao em cascata.
+#
+# Usamos um DestinationRule por servico para manter visibilidade no Kiali e
+# permitir overrides individuais no futuro (timeouts, retries).
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: patient-service, namespace: saude-poc }
+spec:
+  host: patient-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 100 }
+      http: { http2MaxRequests: 1000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: exam-service, namespace: saude-poc }
+spec:
+  host: exam-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 100 }
+      http: { http2MaxRequests: 1000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: lab-service, namespace: saude-poc }
+spec:
+  host: lab-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 100 }
+      http: { http2MaxRequests: 1000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: result-service, namespace: saude-poc }
+spec:
+  host: result-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 200 }
+      http: { http2MaxRequests: 2000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: auth-service, namespace: saude-poc }
+spec:
+  host: auth-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 100 }
+      http: { http2MaxRequests: 1000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: consent-service, namespace: saude-poc }
+spec:
+  host: consent-service
+  # RNF-06: consent check em <= 20ms; mantemos pool generoso pois history chama em hot path.
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 200 }
+      http: { http2MaxRequests: 2000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: history-service, namespace: saude-poc }
+spec:
+  host: history-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 200 }
+      http: { http2MaxRequests: 2000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: audit-service, namespace: saude-poc }
+spec:
+  host: audit-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 100 }
+      http: { http2MaxRequests: 1000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: notification-service, namespace: saude-poc }
+spec:
+  host: notification-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 100 }
+      http: { http2MaxRequests: 1000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata: { name: triage-service, namespace: saude-poc }
+spec:
+  host: triage-service
+  trafficPolicy:
+    connectionPool:
+      tcp:  { maxConnections: 100 }
+      http: { http2MaxRequests: 1000, maxRequestsPerConnection: 10 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50

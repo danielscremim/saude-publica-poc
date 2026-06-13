@@ -1,0 +1,232 @@
+# Plataforma de Distribuição de Dados em Saúde Pública - Ambiente local (PoC)
+# Sobe a infraestrutura (Kafka, PostgreSQL, Kong) e os 4 microsserviços do caminho crítico.
+services:
+
+  # ----------------------- Apache Kafka (KRaft, sem Zookeeper) -----------------------
+  kafka:
+    image: apache/kafka:3.8.1
+    container_name: kafka
+    ports:
+      - "29092:29092"   # acesso a partir do host (IDE / VSCode)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ----------------------- Kafka UI (opcional, visualizar tópicos) -----------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8190:8080"   # movido de 8090 para liberar a porta do triage-service
+    environment:
+      KAFKA_CLUSTERS_0_NAME: saude-poc
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ----------------------- PostgreSQL (um container, vários bancos) -----------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: saude
+      POSTGRES_PASSWORD: saude
+      POSTGRES_DB: postgres
+    volumes:
+      - ./infra/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saude"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------- Kong API Gateway (DB-less) -----------------------
+  kong:
+    image: kong:3.7
+    container_name: kong
+    ports:
+      - "8000:8000"   # proxy (entrada das requisições)
+      - "8001:8001"   # admin API
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    volumes:
+      - ./infra/kong/kong.yml:/kong/kong.yml
+
+  # ======================= MICROSSERVIÇOS =======================
+  patient-service:
+    build: ./patient-service
+    container_name: patient-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/patientdb
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  exam-service:
+    build: ./exam-service
+    container_name: exam-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/examdb
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  lab-service:
+    build: ./lab-service
+    container_name: lab-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  result-service:
+    build: ./result-service
+    container_name: result-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/resultdb
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # JWT compartilhado com auth-service para validar POST /v1/results (fluxo bidirecional).
+      AUTH_JWT_SECRET: c2F1ZGUtcG9jLXNlY3JldC1taW4tMjU2LWJpdHMtcGFkLXBhZC1wYWQtcGFk
+      AUTH_JWT_ISSUER: https://saude-poc.usp.esalq/auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/authdb
+      # Segredo JWT (256 bits base64). Sobrescrever em qualquer ambiente real.
+      AUTH_JWT_SECRET: c2F1ZGUtcG9jLXNlY3JldC1taW4tMjU2LWJpdHMtcGFkLXBhZC1wYWQtcGFk
+      AUTH_JWT_ISSUER: https://saude-poc.usp.esalq/auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  consent-service:
+    build: ./consent-service
+    container_name: consent-service
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/consentdb
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "8089:8089"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notificationdb
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  triage-service:
+    build: ./triage-service
+    container_name: triage-service
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/triagedb
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  audit-service:
+    build: ./audit-service
+    container_name: audit-service
+    ports:
+      - "8088:8088"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auditdb
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Default RNF: 200 acessos / 10 min. Reduzido para 10 na PoC para demonstrar deteccao no test.
+      AUDIT_ANOMALY_THRESHOLD: "10"
+      AUDIT_ANOMALY_WINDOW_MINUTES: "10"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  history-service:
+    build: ./history-service
+    container_name: history-service
+    ports:
+      - "8087:8087"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Mesmo segredo/issuer do auth-service para validar os JWTs emitidos.
+      AUTH_JWT_SECRET: c2F1ZGUtcG9jLXNlY3JldC1taW4tMjU2LWJpdHMtcGFkLXBhZC1wYWQtcGFk
+      AUTH_JWT_ISSUER: https://saude-poc.usp.esalq/auth
+      DOWNSTREAM_PATIENT_URL: http://patient-service:8081
+      DOWNSTREAM_RESULT_URL: http://result-service:8084
+      DOWNSTREAM_CONSENT_URL: http://consent-service:8086
+    depends_on:
+      kafka:
+        condition: service_healthy
+      patient-service:
+        condition: service_started
+      result-service:
+        condition: service_started
+      consent-service:
+        condition: service_started
+
+volumes:
+  pgdata:

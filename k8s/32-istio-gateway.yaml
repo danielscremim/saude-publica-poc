@@ -1,0 +1,51 @@
+# Gateway + VirtualService Istio.
+#
+# Estrategia north-south na PoC: Kong continua como gateway de aplicacao
+# (rate-limiting, auth plugins). Este Gateway adicional do Istio permite
+# expor o mesh DIRETAMENTE para testes/observabilidade no Kiali, sem
+# remover o Kong - usar conforme conveniencia.
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: saude-poc-gateway
+  namespace: saude-poc
+spec:
+  selector:
+    istio: ingressgateway   # usa o IngressGateway default do Istio
+  servers:
+    - port: { number: 80, name: http, protocol: HTTP }
+      hosts: ["*"]
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: saude-poc-routes
+  namespace: saude-poc
+spec:
+  hosts: ["*"]
+  gateways: [saude-poc-gateway]
+  http:
+    # rota mais especifica primeiro (regex history-timeline antes do /v1/patients geral)
+    - match:
+        - uri: { regex: "/v1/patients/[^/]+/clinical-timeline" }
+      route:
+        - destination: { host: history-service, port: { number: 8087 } }
+      timeout: 800ms   # RNF-05
+    - match: [{ uri: { prefix: "/v1/patients" } }]
+      route: [{ destination: { host: patient-service, port: { number: 8081 } } }]
+    - match: [{ uri: { prefix: "/v1/exams" } }]
+      route: [{ destination: { host: exam-service, port: { number: 8082 } } }]
+    - match: [{ uri: { prefix: "/v1/results" } }]
+      route: [{ destination: { host: result-service, port: { number: 8084 } } }]
+    - match: [{ uri: { prefix: "/v1/auth" } }]
+      route: [{ destination: { host: auth-service, port: { number: 8085 } } }]
+    - match: [{ uri: { prefix: "/v1/clients" } }]
+      route: [{ destination: { host: auth-service, port: { number: 8085 } } }]
+    - match: [{ uri: { prefix: "/v1/consents" } }]
+      route: [{ destination: { host: consent-service, port: { number: 8086 } } }]
+    - match: [{ uri: { prefix: "/v1/audit" } }]
+      route: [{ destination: { host: audit-service, port: { number: 8088 } } }]
+    - match: [{ uri: { prefix: "/v1/notifications" } }]
+      route: [{ destination: { host: notification-service, port: { number: 8089 } } }]
+    - match: [{ uri: { prefix: "/v1/triages" } }]
+      route: [{ destination: { host: triage-service, port: { number: 8090 } } }]

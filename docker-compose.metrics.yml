@@ -1,0 +1,48 @@
+# Stack de metricas - SEPARADA do docker-compose.yml principal.
+# Use:
+#   docker compose -f docker-compose.metrics.yml up -d        # so as metricas
+#   k6 run --out influxdb=http://localhost:8086/k6 ...        # k6 grava aqui
+#   abrir http://localhost:3000   (admin / admin)             # Grafana
+#
+# InfluxDB v1.8: protocolo nativo suportado pelo k6 --out influxdb.
+# Grafana provisionado com datasource pre-configurado e 2 dashboards.
+
+services:
+  influxdb:
+    image: influxdb:1.8
+    container_name: k6-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      INFLUXDB_DB: k6
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8086/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: k6-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"     # leitura sem login, conveniente para demo
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
+volumes:
+  influxdb-data:
+  grafana-data:

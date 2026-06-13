@@ -1,0 +1,159 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "RNF-01: Escalabilidade (P95 <= 500ms a 1000 req simultaneas)",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Throughput (req/s)",
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{
+        "measurement": "http_reqs",
+        "query": "SELECT non_negative_derivative(mean(value), 1s) FROM http_reqs WHERE $timeFilter GROUP BY time($__interval) fill(null)",
+        "rawQuery": true,
+        "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 500 }, { "color": "green", "value": 1000 }] } } },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "graphMode": "area" }
+    },
+    {
+      "type": "stat",
+      "title": "P95 latencia HTTP (ms)",
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{
+        "query": "SELECT percentile(value, 95) FROM http_req_duration WHERE $timeFilter",
+        "rawQuery": true,
+        "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 400 }, { "color": "red", "value": 500 }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "VUs concorrentes (max)",
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{
+        "query": "SELECT max(value) FROM vus WHERE $timeFilter",
+        "rawQuery": true,
+        "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }, { "color": "green", "value": 1000 }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Taxa de falha (%)",
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{
+        "query": "SELECT mean(value) * 100 FROM http_req_failed WHERE $timeFilter",
+        "rawQuery": true,
+        "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latencia HTTP - percentis (avg / P95 / P99)",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [
+        { "refId": "A", "alias": "avg", "rawQuery": true, "query": "SELECT mean(value) FROM http_req_duration WHERE $timeFilter GROUP BY time($__interval) fill(null)" },
+        { "refId": "B", "alias": "p95", "rawQuery": true, "query": "SELECT percentile(value, 95) FROM http_req_duration WHERE $timeFilter GROUP BY time($__interval) fill(null)" },
+        { "refId": "C", "alias": "p99", "rawQuery": true, "query": "SELECT percentile(value, 99) FROM http_req_duration WHERE $timeFilter GROUP BY time($__interval) fill(null)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Throughput vs VUs",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [
+        { "refId": "A", "alias": "req/s", "rawQuery": true, "query": "SELECT non_negative_derivative(mean(value), 1s) FROM http_reqs WHERE $timeFilter GROUP BY time($__interval) fill(null)" },
+        { "refId": "B", "alias": "VUs", "rawQuery": true, "query": "SELECT mean(value) FROM vus WHERE $timeFilter GROUP BY time($__interval) fill(null)" }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "type": "row",
+      "title": "RNF-05: Interoperabilidade (history-service <= 800ms)",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Latencia clinical-timeline (RNF-05)",
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [
+        { "refId": "A", "alias": "p95 timeline", "rawQuery": true, "query": "SELECT percentile(value, 95) FROM http_req_duration WHERE \"endpoint\"='timeline' AND $timeFilter GROUP BY time($__interval) fill(null)" },
+        { "refId": "B", "alias": "limite RNF-05", "rawQuery": true, "query": "SELECT 800 FROM http_req_duration WHERE $timeFilter GROUP BY time($__interval) fill(null) LIMIT 1" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [{ "matcher": { "id": "byName", "options": "limite RNF-05" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }, { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }] }] }
+    },
+    {
+      "type": "row",
+      "title": "RNF-06: Consent (check <= 20ms)",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Latencia consent check (RNF-06)",
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [
+        { "refId": "A", "alias": "p95 consent", "rawQuery": true, "query": "SELECT percentile(value, 95) FROM http_req_duration WHERE \"endpoint\"='consent_check' AND $timeFilter GROUP BY time($__interval) fill(null)" },
+        { "refId": "B", "alias": "limite RNF-06", "rawQuery": true, "query": "SELECT 20 FROM http_req_duration WHERE $timeFilter GROUP BY time($__interval) fill(null) LIMIT 1" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [{ "matcher": { "id": "byName", "options": "limite RNF-06" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }] }
+    },
+    {
+      "type": "row",
+      "title": "Latencia por endpoint (todos)",
+      "gridPos": { "x": 0, "y": 23, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "P95 por endpoint",
+      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 9 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{
+        "refId": "A",
+        "rawQuery": true,
+        "query": "SELECT percentile(value, 95) FROM http_req_duration WHERE $timeFilter GROUP BY time($__interval), \"endpoint\" fill(null)"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["saude-poc", "k6", "rnf"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Saude PoC - RNFs (k6)",
+  "uid": "saude-poc-rnfs",
+  "version": 1,
+  "weekStart": ""
+}

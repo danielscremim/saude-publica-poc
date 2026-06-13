@@ -1,0 +1,13 @@
+# Datasource InfluxDB pre-configurado.
+# O Grafana le este arquivo no startup e ja cria a conexao -
+# nao precisa configurar nada pela UI.
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB-k6
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    database: k6
+    isDefault: true
+    editable: true

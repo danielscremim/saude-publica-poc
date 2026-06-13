@@ -1,0 +1,11 @@
+# RNF-03: mTLS STRICT em todo o namespace.
+# Toda comunicacao entre pods do mesh fica criptografada com certificados emitidos
+# pelo Istio CA. Trafego sem mTLS valido e REJEITADO (em vez de PERMISSIVE).
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default-mtls-strict
+  namespace: saude-poc
+spec:
+  mtls:
+    mode: STRICT

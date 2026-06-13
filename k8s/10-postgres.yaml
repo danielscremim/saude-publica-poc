@@ -1,0 +1,84 @@
+# Postgres unico com varios bancos (Database per Service via init script).
+# StatefulSet para garantir storage estavel (PVC) e identidade fixa do pod.
+# Para producao seria substituido por operator (CloudNativePG / Zalando).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: saude-poc
+data:
+  init-databases.sql: |
+    CREATE DATABASE patientdb;
+    CREATE DATABASE examdb;
+    CREATE DATABASE resultdb;
+    CREATE DATABASE authdb;
+    CREATE DATABASE consentdb;
+    CREATE DATABASE auditdb;
+    CREATE DATABASE notificationdb;
+    CREATE DATABASE triagedb;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: saude-poc
+spec:
+  clusterIP: None    # headless para StatefulSet
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: saude-poc
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { configMapKeyRef: { name: shared-config, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: shared-secrets, key: POSTGRES_PASSWORD } }
+            - name: POSTGRES_DB
+              value: postgres
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "saude"] }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi" }
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

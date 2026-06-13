@@ -1,0 +1,77 @@
+# Configuracao declarativa do Kong API Gateway (modo DB-less)
+_format_version: "3.0"
+
+services:
+  - name: patient-service
+    url: http://patient-service:8081
+    routes:
+      - name: patient-route
+        paths:
+          - /v1/patients
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 120
+          policy: local
+
+  - name: exam-service
+    url: http://exam-service:8082
+    routes:
+      - name: exam-route
+        paths:
+          - /v1/exams
+
+  - name: result-service
+    url: http://result-service:8084
+    routes:
+      - name: result-route
+        paths:
+          - /v1/results
+
+  # ----- Identidade / Acesso -----
+  - name: auth-service
+    url: http://auth-service:8085
+    routes:
+      - name: auth-token-route
+        paths:
+          - /v1/auth
+      - name: auth-clients-route
+        paths:
+          - /v1/clients
+
+  - name: consent-service
+    url: http://consent-service:8086
+    routes:
+      - name: consent-route
+        paths:
+          - /v1/consents
+
+  # Fachada agregadora (timeline clinica). Roteia GET /v1/patients/{uuid}/clinical-timeline
+  # via regex; o caminho /v1/patients sozinho continua indo para patient-service (definido acima).
+  - name: history-service
+    url: http://history-service:8087
+    routes:
+      - name: history-timeline-route
+        paths:
+          - ~/v1/patients/[^/]+/clinical-timeline$
+
+  - name: audit-service
+    url: http://audit-service:8088
+    routes:
+      - name: audit-route
+        paths:
+          - /v1/audit
+
+  - name: notification-service
+    url: http://notification-service:8089
+    routes:
+      - name: notification-route
+        paths:
+          - /v1/notifications
+
+  - name: triage-service
+    url: http://triage-service:8090
+    routes:
+      - name: triage-route
+        paths:
+          - /v1/triages

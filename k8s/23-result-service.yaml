@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: result-service
+  namespace: saude-poc
+  labels: { app: result-service }
+spec:
+  ports: [{ name: http, port: 8084, targetPort: 8084 }]
+  selector: { app: result-service }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: result-service
+  namespace: saude-poc
+  labels: { app: result-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: result-service }
+  template:
+    metadata:
+      labels: { app: result-service, version: v1 }
+    spec:
+      containers:
+        - name: result-service
+          image: saude-publica-poc-result-service:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8084 }]
+          env:
+            - { name: SPRING_DATASOURCE_URL, value: "jdbc:postgresql://postgres:5432/resultdb" }
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: { configMapKeyRef: { name: shared-config, key: POSTGRES_USER } }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: shared-secrets, key: POSTGRES_PASSWORD } }
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              valueFrom: { configMapKeyRef: { name: shared-config, key: SPRING_KAFKA_BOOTSTRAP_SERVERS } }
+            # JWT compartilhado com auth-service (validacao do POST /v1/results)
+            - name: AUTH_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: shared-secrets, key: AUTH_JWT_SECRET } }
+            - name: AUTH_JWT_ISSUER
+              valueFrom: { configMapKeyRef: { name: shared-config, key: AUTH_JWT_ISSUER } }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8084 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8084 }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi" }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: result-service
+  namespace: saude-poc
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: result-service }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

@@ -1,0 +1,39 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: history-service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: true
+
+# Compartilha segredo/issuer com o auth-service para validar tokens emitidos por ele (RNF-03).
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET:c2F1ZGUtcG9jLXNlY3JldC1taW4tMjU2LWJpdHMtcGFkLXBhZC1wYWQtcGFk}
+    issuer: ${AUTH_JWT_ISSUER:https://saude-poc.usp.esalq/auth}
+
+# URLs dos servicos a montante. Defaults para execucao via IDE (localhost).
+downstream:
+  patient-service: ${DOWNSTREAM_PATIENT_URL:http://localhost:8081}
+  result-service: ${DOWNSTREAM_RESULT_URL:http://localhost:8084}
+  consent-service: ${DOWNSTREAM_CONSENT_URL:http://localhost:8086}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

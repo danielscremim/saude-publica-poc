@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: exam-service
+  namespace: saude-poc
+  labels: { app: exam-service }
+spec:
+  ports: [{ name: http, port: 8082, targetPort: 8082 }]
+  selector: { app: exam-service }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exam-service
+  namespace: saude-poc
+  labels: { app: exam-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: exam-service }
+  template:
+    metadata:
+      labels: { app: exam-service, version: v1 }
+    spec:
+      containers:
+        - name: exam-service
+          image: saude-publica-poc-exam-service:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8082 }]
+          env:
+            - { name: SPRING_DATASOURCE_URL, value: "jdbc:postgresql://postgres:5432/examdb" }
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: { configMapKeyRef: { name: shared-config, key: POSTGRES_USER } }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: shared-secrets, key: POSTGRES_PASSWORD } }
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              valueFrom: { configMapKeyRef: { name: shared-config, key: SPRING_KAFKA_BOOTSTRAP_SERVERS } }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8082 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8082 }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi" }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: exam-service
+  namespace: saude-poc
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: exam-service }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

@@ -1,0 +1,15 @@
+# Aponta o Grafana para o diretorio onde estao os JSONs dos dashboards.
+# Cada arquivo .json em /var/lib/grafana/dashboards vira um dashboard.
+apiVersion: 1
+
+providers:
+  - name: 'saude-poc'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

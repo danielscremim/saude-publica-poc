@@ -1,0 +1,101 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total Requests",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT sum(\"value\") FROM \"http_reqs\" WHERE $timeFilter", "refId": "A" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue" }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Failed (%)",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT mean(\"value\")*100 FROM \"http_req_failed\" WHERE $timeFilter", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 3, "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green" }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } }
+    },
+    {
+      "type": "stat",
+      "title": "P95 (ms)",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE $timeFilter", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "type": "stat",
+      "title": "P99 (ms)",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT percentile(\"value\", 99) FROM \"http_req_duration\" WHERE $timeFilter", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "type": "stat",
+      "title": "Max VUs",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT max(\"value\") FROM \"vus\" WHERE $timeFilter", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "Iterations",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT sum(\"value\") FROM \"iterations\" WHERE $timeFilter", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate (req/s)",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT non_negative_derivative(mean(\"value\"), 1s) FROM \"http_reqs\" WHERE $timeFilter GROUP BY time($__interval) fill(null)", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Response time (avg / p95 / p99)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [
+        { "rawQuery": true, "alias": "avg", "query": "SELECT mean(\"value\") FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval) fill(null)", "refId": "A" },
+        { "rawQuery": true, "alias": "p95", "query": "SELECT percentile(\"value\", 95) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval) fill(null)", "refId": "B" },
+        { "rawQuery": true, "alias": "p99", "query": "SELECT percentile(\"value\", 99) FROM \"http_req_duration\" WHERE $timeFilter GROUP BY time($__interval) fill(null)", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Virtual Users",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 7 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [{ "rawQuery": true, "query": "SELECT mean(\"value\") FROM \"vus\" WHERE $timeFilter GROUP BY time($__interval) fill(null)", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Data transferred (bytes/s)",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 7 },
+      "datasource": { "type": "influxdb", "uid": "InfluxDB-k6" },
+      "targets": [
+        { "rawQuery": true, "alias": "received", "query": "SELECT non_negative_derivative(mean(\"value\"), 1s) FROM \"data_received\" WHERE $timeFilter GROUP BY time($__interval) fill(null)", "refId": "A" },
+        { "rawQuery": true, "alias": "sent",     "query": "SELECT non_negative_derivative(mean(\"value\"), 1s) FROM \"data_sent\" WHERE $timeFilter GROUP BY time($__interval) fill(null)", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["k6", "load-testing"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "title": "k6 Load Testing - Overview",
+  "uid": "k6-load-overview",
+  "version": 1
+}

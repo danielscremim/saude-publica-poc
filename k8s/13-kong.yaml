@@ -1,0 +1,97 @@
+# Kong continua sendo o gateway de norte-sul (ingress). Istio gere o mesh interno.
+# Em producao seria Kong Ingress Controller; aqui mantemos DB-less com declarativa.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: saude-poc
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    services:
+      - name: patient-service
+        url: http://patient-service:8081
+        routes:
+          - { name: patient-route, paths: [/v1/patients] }
+        plugins:
+          - { name: rate-limiting, config: { minute: 120, policy: local } }
+      - name: exam-service
+        url: http://exam-service:8082
+        routes: [{ name: exam-route, paths: [/v1/exams] }]
+      - name: result-service
+        url: http://result-service:8084
+        routes: [{ name: result-route, paths: [/v1/results] }]
+      - name: auth-service
+        url: http://auth-service:8085
+        routes:
+          - { name: auth-token-route, paths: [/v1/auth] }
+          - { name: auth-clients-route, paths: [/v1/clients] }
+      - name: consent-service
+        url: http://consent-service:8086
+        routes: [{ name: consent-route, paths: [/v1/consents] }]
+      - name: history-service
+        url: http://history-service:8087
+        routes:
+          - { name: history-timeline-route, paths: [~/v1/patients/[^/]+/clinical-timeline$] }
+      - name: audit-service
+        url: http://audit-service:8088
+        routes: [{ name: audit-route, paths: [/v1/audit] }]
+      - name: notification-service
+        url: http://notification-service:8089
+        routes: [{ name: notification-route, paths: [/v1/notifications] }]
+      - name: triage-service
+        url: http://triage-service:8090
+        routes: [{ name: triage-route, paths: [/v1/triages] }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+  namespace: saude-poc
+spec:
+  type: LoadBalancer   # em kind/minikube vira NodePort; em cloud vira LB real
+  ports:
+    - { name: proxy, port: 8000, targetPort: 8000 }
+    - { name: admin, port: 8001, targetPort: 8001 }
+  selector:
+    app: kong
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: saude-poc
+spec:
+  replicas: 2     # RNF-02: gateway com >=2 replicas
+  selector:
+    matchLabels: { app: kong }
+  template:
+    metadata:
+      labels: { app: kong }
+    spec:
+      containers:
+        - name: kong
+          image: kong:3.7
+          ports:
+            - { containerPort: 8000 }
+            - { containerPort: 8001 }
+          env:
+            - { name: KONG_DATABASE, value: "off" }
+            - { name: KONG_DECLARATIVE_CONFIG, value: "/kong/kong.yml" }
+            - { name: KONG_PROXY_ACCESS_LOG, value: "/dev/stdout" }
+            - { name: KONG_ADMIN_ACCESS_LOG, value: "/dev/stdout" }
+            - { name: KONG_PROXY_ERROR_LOG, value: "/dev/stderr" }
+            - { name: KONG_ADMIN_ERROR_LOG, value: "/dev/stderr" }
+            - { name: KONG_ADMIN_LISTEN, value: "0.0.0.0:8001" }
+          volumeMounts:
+            - { name: config, mountPath: /kong }
+          readinessProbe:
+            httpGet: { path: /status, port: 8001 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: config
+          configMap: { name: kong-config }

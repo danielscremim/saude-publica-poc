@@ -1,0 +1,8 @@
+# Namespace dedicado da PoC. A label istio-injection=enabled faz com que todos
+# os pods criados aqui recebam automaticamente o sidecar Envoy do Istio (mesh).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: saude-poc
+  labels:
+    istio-injection: enabled
