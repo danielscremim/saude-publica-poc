@@ -32,7 +32,7 @@ data:
       - name: history-service
         url: http://history-service:8087
         routes:
-          - { name: history-timeline-route, paths: [~/v1/patients/[^/]+/clinical-timeline$] }
+          - { name: history-timeline-route, paths: ["~/v1/patients/[^/]+/clinical-timeline$"] }
       - name: audit-service
         url: http://audit-service:8088
         routes: [{ name: audit-route, paths: [/v1/audit] }]
@@ -91,7 +91,7 @@ spec:
             periodSeconds: 10
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
-            limits:   { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "500m", memory: "1Gi" }
       volumes:
         - name: config
           configMap: { name: kong-config }

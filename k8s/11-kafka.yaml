@@ -28,6 +28,8 @@ spec:
     metadata:
       labels:
         app: kafka
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
         - name: kafka
@@ -42,7 +44,7 @@ spec:
             - { name: KAFKA_ADVERTISED_LISTENERS, value: "PLAINTEXT://kafka:9092" }
             - { name: KAFKA_CONTROLLER_LISTENER_NAMES, value: "CONTROLLER" }
             - { name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" }
-            - { name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: "1@kafka-0.kafka:9093" }
+            - { name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: "1@127.0.0.1:9093" }
             - { name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1" }
             - { name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0" }
             - { name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1" }
