@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-load-rnf01
+  namespace: saude-poc
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:latest
+          command: ["k6", "run", "/scripts/load.js"]
+          env:
+            - name: BASE_HOST
+              value: "172.31.209.166"
+            - name: KONG_PORT
+              value: "8000"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: lib
+              mountPath: /scripts/lib
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "1Gi"
+      volumes:
+        - name: scripts
+          configMap:
+            name: k6-scripts
+        - name: lib
+          configMap:
+            name: k6-lib

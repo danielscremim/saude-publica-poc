@@ -1,18 +1,26 @@
 // URLs dos servicos. Sobrescreva via env vars do k6 ao rodar fora do localhost,
 // ex: k6 run -e BASE_HOST=192.168.0.10 load.js
+//
+// No Kubernetes, passe KONG_PORT=8000 para rotear tudo pelo API Gateway:
+// ex: k6 run -e BASE_HOST=<vm-ip> -e KONG_PORT=8000 load.js
 
 const HOST = __ENV.BASE_HOST || 'localhost';
+const KONG = __ENV.KONG_PORT ? `http://${HOST}:${__ENV.KONG_PORT}` : null;
+
+function svc(port) {
+  return KONG || `http://${HOST}:${port}`;
+}
 
 export const URLS = {
-  PATIENT:      `http://${HOST}:8081`,
-  EXAM:         `http://${HOST}:8082`,
-  RESULT:       `http://${HOST}:8084`,
-  AUTH:         `http://${HOST}:8085`,
-  CONSENT:      `http://${HOST}:8086`,
-  HISTORY:      `http://${HOST}:8087`,
-  AUDIT:        `http://${HOST}:8088`,
-  NOTIFICATION: `http://${HOST}:8089`,
-  TRIAGE:       `http://${HOST}:8090`,
+  PATIENT:      svc(8081),
+  EXAM:         svc(8082),
+  RESULT:       svc(8084),
+  AUTH:         svc(8085),
+  CONSENT:      svc(8086),
+  HISTORY:      svc(8087),
+  AUDIT:        svc(8088),
+  NOTIFICATION: svc(8089),
+  TRIAGE:       svc(8090),
 };
 
 export const DEFAULT_HEADERS = { 'Content-Type': 'application/json' };
