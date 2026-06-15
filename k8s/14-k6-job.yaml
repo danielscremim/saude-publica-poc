@@ -20,6 +20,8 @@ spec:
               value: "172.31.209.166"
             - name: KONG_PORT
               value: "8000"
+            - name: MAX_VUS
+              value: "1000"
           volumeMounts:
             - name: scripts
               mountPath: /scripts

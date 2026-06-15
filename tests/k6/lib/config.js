@@ -34,12 +34,23 @@ export const DEFAULT_HEADERS = { 'Content-Type': 'application/json' };
 // Valores adotados para PoC (single-VM, todos servicos co-localizados):
 //   P95 geral <= 2000ms | timeline <= 2000ms | consent <= 2000ms | erro < 1%
 // A diferenca entre design e PoC e documentada no relatorio (limitacao de ambiente).
-export const RNF_THRESHOLDS = {
-  // RNF-01: escalabilidade (PoC: 2000ms; design producao: 500ms)
-  'http_req_duration':                                ['p(95)<2000'],
+// Thresholds de DESIGN (producao) — usados no teste de 150 VUs (infra ociosa):
+export const RNF_THRESHOLDS_DESIGN = {
+  'http_req_duration':                                ['p(95)<500'],
   'http_req_failed':                                  ['rate<0.01'],
-  // RNF-05: interoperabilidade / history-service (PoC: 2000ms; design: 800ms)
-  'http_req_duration{endpoint:timeline}':             ['p(95)<2000'],
-  // RNF-06: consent check (PoC: 2000ms; design producao: 20ms com cache dedicado)
-  'http_req_duration{endpoint:consent_check}':        ['p(95)<2000'],
+  'http_req_duration{endpoint:timeline}':             ['p(95)<800'],
+  'http_req_duration{endpoint:consent_check}':        ['p(95)<20'],
 };
+
+// Thresholds de PoC (single-VM, 1000 VUs, todos servicos co-localizados):
+export const RNF_THRESHOLDS = __ENV.THRESHOLDS === 'design'
+  ? RNF_THRESHOLDS_DESIGN
+  : {
+    // RNF-01: escalabilidade (PoC: 2000ms; design producao: 500ms)
+    'http_req_duration':                                ['p(95)<2000'],
+    'http_req_failed':                                  ['rate<0.01'],
+    // RNF-05: interoperabilidade / history-service (PoC: 2000ms; design: 800ms)
+    'http_req_duration{endpoint:timeline}':             ['p(95)<2000'],
+    // RNF-06: consent check (PoC: 2000ms; design producao: 20ms com cache dedicado)
+    'http_req_duration{endpoint:consent_check}':        ['p(95)<2000'],
+  };
