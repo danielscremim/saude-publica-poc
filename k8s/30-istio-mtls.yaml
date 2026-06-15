@@ -9,3 +9,21 @@ metadata:
 spec:
   mtls:
     mode: STRICT
+---
+# Kong e o ingress gateway da arquitetura — clientes externos (incluindo o Job
+# k6 sem sidecar) chegam sem mTLS na porta 8000. O trafego Kong → servicos
+# internos continua STRICT (Kong tem sidecar e usa mTLS para o egress).
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: kong-permissive-ingress
+  namespace: saude-poc
+spec:
+  selector:
+    matchLabels:
+      app: kong
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    8000:
+      mode: PERMISSIVE

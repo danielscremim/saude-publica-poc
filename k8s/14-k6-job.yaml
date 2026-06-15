@@ -8,7 +8,7 @@ spec:
   template:
     metadata:
       annotations:
-        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/inject: "false"
     spec:
       restartPolicy: Never
       containers:
@@ -17,7 +17,7 @@ spec:
           command: ["k6", "run", "/scripts/load.js"]
           env:
             - name: BASE_HOST
-              value: "kong.saude-poc.svc.cluster.local"
+              value: "172.31.209.166"
             - name: KONG_PORT
               value: "8000"
           volumeMounts:
