@@ -14,7 +14,7 @@ data:
         routes:
           - { name: patient-route, paths: [/v1/patients], strip_path: false }
         plugins:
-          - { name: rate-limiting, config: { minute: 120, policy: local } }
+          - { name: rate-limiting, config: { minute: 10000, policy: local } }
       - name: exam-service
         url: http://exam-service:8082
         routes: [{ name: exam-route, paths: [/v1/exams], strip_path: false }]

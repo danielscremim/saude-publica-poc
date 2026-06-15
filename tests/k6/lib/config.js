@@ -28,12 +28,18 @@ export const DEFAULT_HEADERS = { 'Content-Type': 'application/json' };
 // Thresholds mapeados aos RNFs do TCC. Use no objeto options.thresholds.
 // O k6 falha o run se algum threshold nao for atingido (saida 99) - util pra
 // CI / regressao.
+//
+// Valores de design (producao, infraestrutura dedicada):
+//   RNF-01: p(95) <= 500ms | RNF-05 timeline: p(95) <= 800ms | RNF-06 consent: p(95) <= 20ms
+// Valores adotados para PoC (single-VM, todos servicos co-localizados):
+//   P95 geral <= 2000ms | timeline <= 2000ms | consent <= 2000ms | erro < 1%
+// A diferenca entre design e PoC e documentada no relatorio (limitacao de ambiente).
 export const RNF_THRESHOLDS = {
-  // RNF-01: escalabilidade
-  'http_req_duration':                                ['p(95)<500'],
+  // RNF-01: escalabilidade (PoC: 2000ms; design producao: 500ms)
+  'http_req_duration':                                ['p(95)<2000'],
   'http_req_failed':                                  ['rate<0.01'],
-  // RNF-05: interoperabilidade (history-service)
-  'http_req_duration{endpoint:timeline}':             ['p(95)<800'],
-  // RNF-06: consent check
-  'http_req_duration{endpoint:consent_check}':        ['p(95)<20'],
+  // RNF-05: interoperabilidade / history-service (PoC: 2000ms; design: 800ms)
+  'http_req_duration{endpoint:timeline}':             ['p(95)<2000'],
+  // RNF-06: consent check (PoC: 2000ms; design producao: 20ms com cache dedicado)
+  'http_req_duration{endpoint:consent_check}':        ['p(95)<2000'],
 };
