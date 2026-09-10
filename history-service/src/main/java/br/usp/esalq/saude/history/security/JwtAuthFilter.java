@@ -1,39 +1,31 @@
 package br.usp.esalq.saude.history.security;
 
-import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import javax.crypto.SecretKey;
 import java.io.IOException;
-import java.util.Base64;
 
 /**
- * Valida o JWT (HS256, mesmo segredo do auth-service) e anexa um AuthenticatedCaller
- * ao request. Sem token valido -> 401. Endpoints de actuator e openapi sao liberados.
+ * Valida o JWT e anexa um AuthenticatedCaller ao request. Sem token valido -> 401.
+ * Cobre REST (/v1/...) E GraphQL (/graphql). Actuator, OpenAPI e a UI do GraphiQL
+ * sao liberados (a UI envia o header Authorization nas queries que dispara).
  */
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     public static final String CALLER_ATTR = "history.caller";
 
-    private final SecretKey key;
-    private final String issuer;
+    private final JwtValidator validator;
 
-    public JwtAuthFilter(@Value("${auth.jwt.secret}") String base64Secret,
-                         @Value("${auth.jwt.issuer}") String issuer) {
-        this.key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(base64Secret));
-        this.issuer = issuer;
+    public JwtAuthFilter(JwtValidator validator) {
+        this.validator = validator;
     }
 
     @Override
@@ -41,35 +33,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         return path.startsWith("/actuator")
                 || path.startsWith("/swagger-ui")
-                || path.startsWith("/v3/api-docs");
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/graphiql");
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (header == null || !header.startsWith("Bearer ")) {
+        String token = JwtValidator.extractBearer(request.getHeader(HttpHeaders.AUTHORIZATION));
+        if (token == null) {
             unauthorized(response, "missing_token");
             return;
         }
-
-        String token = header.substring("Bearer ".length()).trim();
         try {
-            Claims claims = Jwts.parser()
-                    .verifyWith(key)
-                    .requireIssuer(issuer)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
-
-            String clientId = claims.getSubject();
-            String institutionId = claims.get("inst", String.class);
-            String scope = claims.get("scope", String.class);
-
-            request.setAttribute(CALLER_ATTR, new AuthenticatedCaller(clientId, institutionId, scope));
+            request.setAttribute(CALLER_ATTR, validator.validate(token));
             chain.doFilter(request, response);
-
         } catch (JwtException ex) {
             unauthorized(response, "invalid_token");
         }

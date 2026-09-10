@@ -33,6 +33,8 @@ data:
         url: http://history-service:8087
         routes:
           - { name: history-timeline-route, paths: ["~/v1/patients/[^/]+/clinical-timeline$"], strip_path: false }
+          - { name: history-graphql-route,  paths: [/graphql],  strip_path: false }
+          - { name: history-graphiql-route, paths: [/graphiql], strip_path: false }
       - name: audit-service
         url: http://audit-service:8088
         routes: [{ name: audit-route, paths: [/v1/audit], strip_path: false }]

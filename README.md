@@ -227,3 +227,17 @@ saude-publica-poc/
 - JWT compartilhado entre auth (emissor) e history/result (validadores) via `AUTH_JWT_SECRET`
 
 Detalhes completos em [CLAUDE.md](CLAUDE.md).
+
+
+## GraphQL (camada de leitura)
+
+O `history-service` expõe, além do REST, um endpoint GraphQL para consumidores autorizados
+escolherem exatamente os campos de que precisam (evita *over-fetching*). Mesmo JWT, mesmo
+consentimento, mesma auditoria do REST. Detalhes e justificativa: `docs/graphql-decisao-arquitetural.md`.
+
+```bash
+./scripts/test-graphql.sh                     # smoke test (docker compose)
+cd history-service && mvn test                # teste automatizado (sem Kafka/Postgres)
+k6 run -e BASE_HOST=<ip> -e KONG_PORT=8000 tests/k6/rest-vs-graphql.js   # comparativo REST x GraphQL
+```
+UI: http://localhost:8087/graphiql · Contrato (SDL): http://localhost:8087/graphql/schema

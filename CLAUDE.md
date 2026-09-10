@@ -242,10 +242,11 @@ lista de exames."* — https://rnds-guia.saude.gov.br/docs/rel/mi-rel/
 - **PostgreSQL 16** — um banco dedicado por serviço (*Database per Service*)
 - **Kong API Gateway** (DB-less) — entrada das requisições
 - **jjwt 0.12.6** — emissão e validação de JWT HS256 (auth/history/result)
+- **Spring for GraphQL** — transporte de LEITURA do history-service (CQRS: escrita REST+Kafka, leitura GraphQL). Ver `docs/graphql-decisao-arquitetural.md`
 - **Docker + Docker Compose** — ambiente local atual
-- **Istio + Kubernetes** — alvo futuro (mTLS, HPA, Circuit Breaker)
-- **k6** — teste de carga (futuro)
-- **Observabilidade futura:** Prometheus + Grafana + Jaeger + Kiali
+- **Istio + Kubernetes (k3s)** — validado em VM (mTLS STRICT, HPA, Circuit Breaker)
+- **k6** — testes de carga (`tests/k6/`); bateria oficial em 2 VMs via `tests/k6/run-2vm.sh`
+- **Observabilidade:** addons do Istio (Prometheus + Grafana + Jaeger + Kiali)
 
 ---
 
@@ -278,7 +279,7 @@ lista de exames."* — https://rnds-guia.saude.gov.br/docs/rel/mi-rel/
 | result-service | 8084 | ✅ FEITO | Consome `exam.completed`; POST autenticado (fluxo bidirecional); expõe resultados |
 | auth-service | 8085 | ✅ FEITO | Emissão de JWT HS256 (OAuth2 Client Credentials); escopos granulares |
 | consent-service | 8086 | ✅ FEITO | Consentimento LGPD; check ≤ 20 ms; publica `consent.revoked` |
-| history-service | 8087 | ✅ FEITO | Fachada agregadora; checa consent (403 se negado); publica `audit.events` |
+| history-service | 8087 | ✅ FEITO | Fachada agregadora REST **e GraphQL** (`/graphql`); checa consent (403 / FORBIDDEN); depth/complexity limit; publica `audit.events` |
 | audit-service | 8088 | ✅ FEITO | Consome `audit.events`; log imutável (PK = eventId, idempotente); anomaly detection |
 | notification-service | 8089 | ✅ FEITO | Consome `exam.completed`; envia notificação (LOG / estrutura pronta p/ EMAIL/SMS/WEBHOOK) |
 | triage-service | 8090 | ✅ FEITO | Registro de triagem na UBS; classificação Manchester automática |
@@ -364,6 +365,13 @@ history-service                                     # FACHADA AGREGADORA
     resp: 200 { patientUuid, patient, exams[], totalExams }
           403 consent_denied  (publica audit READ_TIMELINE_DENIED)
           401 invalid_token / missing_token
+  POST /graphql                                     # MESMO consent/auditoria do REST (CQRS: leitura)
+    auth: Bearer JWT (401 sem token, no filtro HTTP)
+    query: patientHistory(patientUuid: ID!, purpose: String): Timeline!
+           Timeline { patientUuid patient{uuid name birthDate} exams(examType,limit){...} totalExams }
+    erros: HTTP 200 + errors[].extensions.classification = FORBIDDEN | UNAUTHORIZED | NOT_FOUND
+    limites: profundidade 5 / complexidade 100 (GRAPHQL_MAX_DEPTH, GRAPHQL_MAX_COMPLEXITY)
+  GET  /graphql/schema  (SDL)      GET /graphiql  (UI, sem token; envie Authorization na UI)
 
 audit-service                                       # LOG IMUTÁVEL (sem UPDATE/DELETE)
   GET /v1/audit/patient/{patientUuid}
@@ -422,11 +430,13 @@ Portas: Kong proxy 8000, Kong admin 8001, Kafka host 29092, **Kafka UI 8190** (m
 
 ---
 
-## 9. Próximas tarefas
+## 9. Estado e próximas tarefas (fase final — set/2026)
 
-1. **Kubernetes + Istio** — ✅ manifests prontos em `k8s/` (10 Deployments com 2 réplicas, HPAs a 70% CPU, PeerAuthentication STRICT, DestinationRules com circuit breaker, Gateway). Falta deploy/validação em cluster real (requer kubectl + istioctl + metrics-server). Ver `k8s/README.md`.
-2. **k6** — script de teste de carga validando o RNF-01.
-3. Evolução opcional: paciente como titular ativo (escopo `history:read:self`), integração real de canais de notificação (EMAIL/WEBHOOK), consumidores reais de `consent.revoked` para invalidação de cache.
+1. ✅ Kubernetes (k3s) + Istio validados em VM; resultados em `docs/resultados-preliminares.md` e no cabeçalho de `tests/k6/load.js`.
+2. ✅ GraphQL no history-service (sugestão do orientador) + teste automatizado + `scripts/test-graphql.sh` + `tests/k6/rest-vs-graphql.js`.
+3. ⬜ Rodar a bateria em **2 VMs** (`docs/GUIA-VMS.md`, `tests/k6/run-2vm.sh`): design 150 VUs, 1000 VUs, REST×GraphQL — 3 rodadas cada.
+4. ⬜ TCC final (janela 22/09–06/10/2026): Resultados na mesma ordem da Metodologia; insumos em `docs/`.
+5. Evolução opcional: persisted queries + cache, paciente como titular ativo (`history:read:self`), consumidores de `consent.revoked`.
 
 ---
 
@@ -451,3 +461,5 @@ Todo acesso é auditado pelo audit-service via Kafka.
 - **NÃO** adicione novas tecnologias ao stack sem necessidade justificada por um RNF.
 - Ao criar um novo serviço, **siga o template** de um serviço existente (estrutura, application.yml com defaults localhost, Dockerfile multi-stage, OpenAPI).
 - Ao criar um novo consumidor Kafka, **sempre** incluir `spring.json.use.type.headers: false` (ver convenção na seção 3).
+- **GraphQL só na leitura.** Não crie mutations para ingestão: produtores continuam usando REST (`POST /v1/results`). Novos campos de leitura entram no `schema.graphqls` + resolver; a autorização continua no `TimelineService`, nunca no resolver.
+- Ao alterar o history-service, rode `mvn test` (HistoryGraphQLTest sobe o serviço com clients mockados).

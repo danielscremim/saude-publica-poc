@@ -1,0 +1,40 @@
+# Contrato GraphQL do history-service (camada de DISTRIBUICAO / leitura).
+# Qualquer consumidor autorizado usa este mesmo contrato; o consent do paciente
+# e verificado antes de qualquer campo ser resolvido (RNF-06).
+#
+# Datas sao expostas como String ISO-8601 (ex.: "2026-09-10T14:32:00Z").
+
+type Query {
+  """
+  Linha do tempo clinica do paciente. Requer JWT valido (header Authorization)
+  e consentimento ativo da instituicao do JWT para o paciente.
+  Sem consentimento: erro com classification FORBIDDEN.
+  """
+  patientHistory(patientUuid: ID!, purpose: String): Timeline!
+}
+
+type Timeline {
+  patientUuid: ID!
+  patient: Patient!
+  """
+  Exames do paciente (mais recentes primeiro). Filtros opcionais:
+  examType (ex.: "GLICEMIA") e limit (maximo de itens).
+  """
+  exams(examType: String, limit: Int): [Exam!]!
+  totalExams: Int!
+}
+
+type Patient {
+  uuid: ID!
+  name: String!
+  birthDate: String
+}
+
+type Exam {
+  examId: ID!
+  examType: String!
+  origin: String!
+  resultValue: Float!
+  resultUnit: String!
+  completedAt: String!
+}

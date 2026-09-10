@@ -1,0 +1,5 @@
+spring:
+  kafka:
+    admin:
+      auto-create: false     # nao tenta criar topicos (sem broker no teste)
+      fail-fast: false

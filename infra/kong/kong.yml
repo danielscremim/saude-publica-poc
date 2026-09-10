@@ -54,6 +54,13 @@ services:
       - name: history-timeline-route
         paths:
           - ~/v1/patients/[^/]+/clinical-timeline$
+      # GraphQL: camada de leitura (CQRS). Mesmo consent/auditoria do REST.
+      - name: history-graphql-route
+        paths:
+          - /graphql
+      - name: history-graphiql-route
+        paths:
+          - /graphiql
 
   - name: audit-service
     url: http://audit-service:8088

@@ -11,6 +11,15 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       properties:
         spring.json.add.type.headers: true
+  # GraphQL (camada de leitura). UI de exploracao em /graphiql (envie o header Authorization pela UI).
+  graphql:
+    path: /graphql
+    graphiql:
+      enabled: true
+      path: /graphiql
+    schema:
+      printer:
+        enabled: true          # GET /graphql/schema expoe o SDL (contrato, RNF-05)
 
 # Compartilha segredo/issuer com o auth-service para validar tokens emitidos por ele (RNF-03).
 auth:
@@ -37,3 +46,8 @@ management:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+graphql:
+  limits:
+    max-depth: ${GRAPHQL_MAX_DEPTH:5}            # RNF-06: rejeita aninhamento abusivo
+    max-complexity: ${GRAPHQL_MAX_COMPLEXITY:100}

@@ -197,3 +197,15 @@ docker compose -f docker-compose.metrics.yml down
 # remove tambem os volumes (apaga histórico de runs)
 docker compose -f docker-compose.metrics.yml down -v
 ```
+
+## rest-vs-graphql.js — comparativo REST × GraphQL
+
+Mede, para a mesma consulta de histórico, três variantes em sequência (nunca simultâneas):
+REST completo · GraphQL com todos os campos · GraphQL com 3 campos. Métricas por
+`endpoint`: `http_req_duration p(95)` e `resp_bytes` (bytes por resposta).
+```bash
+k6 run -e BASE_HOST=<IP_VM1> -e KONG_PORT=8000 -e EXAMS_PER_PATIENT=30 --summary-export out.json rest-vs-graphql.js
+```
+
+## run-2vm.sh — bateria oficial a partir da VM-2
+`BASE_HOST=<IP_VM1> ./run-2vm.sh` → aquecimento + 3 rodadas de `design`, `load1000` e `graphql`, com `resumo.csv`. Ver `docs/GUIA-VMS.md`.
