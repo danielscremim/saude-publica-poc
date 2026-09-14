@@ -4,7 +4,8 @@
 #   - Consent obrigatorio (sem consent -> errors[].classification FORBIDDEN)
 #   - Consulta seletiva (so os campos pedidos voltam) e filtros examType/limit
 #   - Limite de profundidade (query abusiva -> erro antes de executar) — RNF-06
-#   - Comparacao de tamanho do payload REST x GraphQL (over-fetching)
+#   - Minimizacao de dados: tamanho da resposta declarada vs linha de base completa
+#   - Visao consolidada (exames + triagens + notificacoes + auditoria) em 1 requisicao
 #
 # Uso: ./scripts/test-graphql.sh                      (docker compose, portas locais)
 #      BASE=http://<IP_VM1>:8000 ./scripts/test-graphql.sh   (via Kong no Kubernetes)
@@ -88,12 +89,20 @@ echo "    $(echo "$BODY" | head -c 200)"
 echo "$BODY" | grep -qi 'depth' || { echo "ERRO: esperava rejeicao por profundidade"; exit 1; }
 
 echo ""
-echo "==> 9. REST equivalente (payload completo) para comparar tamanho..."
+echo "==> 9. Linha de base (resposta completa e fixa) para medir a minimizacao..."
 REST=$(curl -s -H "Authorization: Bearer $TOKEN" "$HISTORY_URL/v1/patients/$UUID/clinical-timeline?purpose=TREATMENT")
 REST_BYTES=${#REST}
-echo "    REST     : $REST_BYTES bytes"
-echo "    GraphQL  : $GQL_BYTES bytes (consulta seletiva)"
-echo "    Reducao  : $(( (REST_BYTES - GQL_BYTES) * 100 / REST_BYTES ))%"
+echo "    Linha de base (completa) : $REST_BYTES bytes"
+echo "    Declarada (3 campos)     : $GQL_BYTES bytes"
+echo "    Minimizacao              : $(( (REST_BYTES - GQL_BYTES) * 100 / REST_BYTES ))% menos dados trafegados"
+
+echo ""
+echo "==> 9b. Visao consolidada em UMA requisicao (exames + triagens + notificacoes + auditoria)..."
+Q_CONS='query($id: ID!){ patientHistory(patientUuid:$id, purpose:"TREATMENT"){ patient{ name } exams{ examType } triages{ priority } notifications{ channel } auditTrail{ action } } }'
+BODY=$(gql "$TOKEN" "$Q_CONS" "$VARS" | head -1)
+echo "    $(echo "$BODY" | head -c 300)"
+echo "$BODY" | grep -q '"patientHistory"' || { echo "ERRO: visao consolidada falhou"; exit 1; }
+echo "    OK - 1 requisicao no lugar de 4 (history + triages + notifications + audit)"
 
 echo ""
 echo "==> 10. Revogando consent e consultando de novo (esperado: FORBIDDEN)..."

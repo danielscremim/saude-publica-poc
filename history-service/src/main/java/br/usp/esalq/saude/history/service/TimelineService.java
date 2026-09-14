@@ -7,6 +7,7 @@ import br.usp.esalq.saude.history.dto.ConsentCheckDto;
 import br.usp.esalq.saude.history.dto.PatientDto;
 import br.usp.esalq.saude.history.dto.ResultDto;
 import br.usp.esalq.saude.history.dto.TimelineEntry;
+import br.usp.esalq.saude.history.dto.PatientView;
 import br.usp.esalq.saude.history.dto.TimelineResponse;
 import br.usp.esalq.saude.history.security.AuthenticatedCaller;
 import org.slf4j.Logger;
@@ -47,7 +48,11 @@ public class TimelineService {
         this.auditPublisher = auditPublisher;
     }
 
-    public TimelineResponse getTimeline(UUID patientUuid, AuthenticatedCaller caller, String purpose) {
+    /**
+     * Base comum ao REST e ao GraphQL: valida consent, agrega paciente + exames e
+     * audita o acesso. Retorna PatientView; o REST converte para TimelineResponse.
+     */
+    public PatientView getPatientView(UUID patientUuid, AuthenticatedCaller caller, String purpose) {
         ConsentCheckDto consent = consentClient.check(patientUuid, caller.institutionId());
         if (consent == null || !consent.granted()) {
             log.warn("Acesso negado por falta de consentimento: paciente={}, instituicao={}",
@@ -70,7 +75,13 @@ public class TimelineService {
 
         auditPublisher.publish(caller.clientId(), patientUuid, "READ_TIMELINE", nullSafe(purpose));
 
-        return new TimelineResponse(patientUuid, patient, entries, entries.size());
+        return new PatientView(patientUuid, patient, entries, entries.size());
+    }
+
+    /** Contrato REST (inalterado). */
+    public TimelineResponse getTimeline(UUID patientUuid, AuthenticatedCaller caller, String purpose) {
+        PatientView v = getPatientView(patientUuid, caller, purpose);
+        return new TimelineResponse(v.patientUuid(), v.patient(), v.exams(), v.totalExams());
     }
 
     private static String nullSafe(String s) {

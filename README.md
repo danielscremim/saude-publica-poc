@@ -229,15 +229,18 @@ saude-publica-poc/
 Detalhes completos em [CLAUDE.md](CLAUDE.md).
 
 
-## GraphQL (camada de leitura)
+## GraphQL — BFF da camada de distribuição
 
-O `history-service` expõe, além do REST, um endpoint GraphQL para consumidores autorizados
-escolherem exatamente os campos de que precisam (evita *over-fetching*). Mesmo JWT, mesmo
-consentimento, mesma auditoria do REST. Detalhes e justificativa: `docs/graphql-decisao-arquitetural.md`.
+O `history-service` expõe, além do REST, um endpoint GraphQL: o consumidor declara os campos
+necessários à sua finalidade e recebe apenas isso — **minimização de dados** (LGPD Art. 6º, III).
+Campo não solicitado não gera chamada ao serviço a montante. A visão consolidada do paciente
+(exames + triagens + notificações + trilha de auditoria) vem em **uma requisição**, no lugar de
+quatro. Mesmo JWT, mesmo consentimento e mesma auditoria do REST.
+Justificativa completa: `docs/graphql-decisao-arquitetural.md`.
 
 ```bash
 ./scripts/test-graphql.sh                     # smoke test (docker compose)
 cd history-service && mvn test                # teste automatizado (sem Kafka/Postgres)
-k6 run -e BASE_HOST=<ip> -e KONG_PORT=8000 tests/k6/rest-vs-graphql.js   # comparativo REST x GraphQL
+k6 run -e BASE_HOST=<ip> -e KONG_PORT=8000 tests/k6/minimizacao-dados.js # bytes e round-trips
 ```
 UI: http://localhost:8087/graphiql · Contrato (SDL): http://localhost:8087/graphql/schema

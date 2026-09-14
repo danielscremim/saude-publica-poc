@@ -198,14 +198,16 @@ docker compose -f docker-compose.metrics.yml down
 docker compose -f docker-compose.metrics.yml down -v
 ```
 
-## rest-vs-graphql.js — comparativo REST × GraphQL
+## minimizacao-dados.js — minimização de dados na camada de distribuição
 
-Mede, para a mesma consulta de histórico, três variantes em sequência (nunca simultâneas):
-REST completo · GraphQL com todos os campos · GraphQL com 3 campos. Métricas por
-`endpoint`: `http_req_duration p(95)` e `resp_bytes` (bytes por resposta).
+Não é benchmark de protocolo: mede a plataforma contra si mesma. Cinco variantes em
+sequência (nunca simultâneas): `baseline_full` (REST completo) · `declarado_full`
+(GraphQL todos os campos, controle) · `declarado_min` (GraphQL 3 campos) ·
+`baseline_multi` (4 chamadas REST para a visão consolidada) · `consolidado`
+(a mesma visão em 1 query). Métricas por `endpoint`: `resp_bytes`, `roundtrips`, `p(95)`.
 ```bash
-k6 run -e BASE_HOST=<IP_VM1> -e KONG_PORT=8000 -e EXAMS_PER_PATIENT=30 --summary-export out.json rest-vs-graphql.js
+k6 run -e BASE_HOST=<IP_VM1> -e KONG_PORT=8000 -e EXAMS_PER_PATIENT=30 --summary-export out.json minimizacao-dados.js
 ```
 
 ## run-2vm.sh — bateria oficial a partir da VM-2
-`BASE_HOST=<IP_VM1> ./run-2vm.sh` → aquecimento + 3 rodadas de `design`, `load1000` e `graphql`, com `resumo.csv`. Ver `docs/GUIA-VMS.md`.
+`BASE_HOST=<IP_VM1> ./run-2vm.sh` → aquecimento + 3 rodadas de `design`, `load1000` e `minimizacao`, com `resumo.csv`. Ver `docs/GUIA-VMS.md`.

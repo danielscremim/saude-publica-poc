@@ -1,58 +1,86 @@
 # Decisão Arquitetural — GraphQL na camada de distribuição
 
-> Insumo para as seções *Metodologia* (subtópico "Arquitetura proposta") e *Resultados e Discussão* do TCC.
-> Sugestão do orientador: adotar GraphQL para otimizar a plataforma.
+> Insumo para a *Metodologia* (subtópico "Arquitetura proposta") e para os *Resultados e Discussão* do TCC.
+> Origem: sugestão do orientador para a fase final, mantendo o título e os objetivos do projeto aprovado.
 
-## 1. O que o GraphQL substitui e o que ele agrega
+## 1. Enquadramento: por que GraphQL entra no trabalho
 
-A arquitetura tem dois tipos de tráfego com naturezas distintas:
+O trabalho é sobre a **camada de interoperabilidade** — receber, armazenar e distribuir dados clínicos com privacidade. O GraphQL **não** entra como objeto de comparação entre protocolos; entra como o mecanismo que permite à camada de distribuição entregar **apenas o dado necessário à finalidade declarada** pelo consumidor.
 
-| Tráfego | Natureza | Tecnologia | Motivo |
-|---|---|---|---|
-| **Ingestão** (produtores enviam resultados) | Escrita, alto volume, sistemas legados heterogêneos | **REST + OpenAPI → Kafka** (mantido) | Simplicidade e universalidade para integradores; assíncrono por natureza |
-| **Distribuição** (consumidores leem histórico) | Leitura agregada de vários serviços, consumidores com necessidades diferentes | **GraphQL** (adicionado) | Consumidor escolhe os campos; um contrato tipado evolui sem versionar |
+Isso é a **minimização de dados**, princípio da LGPD (Art. 6º, III) e um dos sete princípios de Privacidade por Design (Cavoukian, 2011). Até aqui o trabalho tratava privacidade como **controle de acesso** (consentimento, auditoria, tokenização de CPF). O GraphQL acrescenta uma dimensão que faltava: privacidade no **volume de dado trafegado**.
 
-Conclusão: o GraphQL **agrega** como transporte de leitura do `history-service`, coexistindo com o REST. Ele **não substitui** Kafka (assíncrono ≠ consulta), nem o Kong (borda: TLS, JWT, rate limit), nem a ingestão REST. A separação escrita/leitura configura o padrão **CQRS** (*Command Query Responsibility Segregation*).
+Enquadramento correto dos resultados:
 
-## 2. Implementação (history-service)
+| Evitar | Adotar |
+|---|---|
+| "GraphQL é X% mais rápido que REST" | "A camada de distribuição transferiu X% menos dados quando o consumidor declarou apenas os campos necessários à sua finalidade" |
 
-- `spring-boot-starter-graphql` (Spring for GraphQL), abordagem *schema-first* — contrato em `src/main/resources/graphql/schema.graphqls`, publicado em `GET /graphql/schema` (RNF-05: contrato autodocumentado, análogo ao OpenAPI da ingestão).
-- **Mesmo `TimelineService` do REST**: a checagem de consentimento (RNF-06) e a auditoria (`audit.events`) são idênticas nos dois transportes. Autorização não depende do protocolo.
-- **JWT** validado uma única vez (`JwtValidator`) e injetado no contexto GraphQL (`CallerContextInterceptor`).
-- Campo `Timeline.exams(examType, limit)` com filtros server-side — sem novos endpoints.
-- **Erros**: em GraphQL o HTTP é sempre 200; a semântica vai em `errors[].extensions.classification` (`FORBIDDEN` para consent negado, `UNAUTHORIZED`, `NOT_FOUND`). Ausência de token continua sendo 401 no filtro HTTP, antes do GraphQL.
-- **Proteção anti-abuso**: `MaxQueryDepthInstrumentation` (5) e `MaxQueryComplexityInstrumentation` (100) rejeitam queries aninhadas/pesadas *antes* de executar qualquer resolver. Isso compensa o fato de que, com um único endpoint `/graphql`, o rate limit por rota do Kong perde granularidade (RNF-06).
-- N+1 não se aplica aqui: a agregação `patient + results` ocorre uma vez por query; os resolvers de campo operam sobre a lista em memória (por isso não foi necessário `DataLoader`).
+O REST não é adversário: é a **linha de base da própria plataforma** — o comportamento sem minimização. A arquitetura é medida contra si mesma.
 
-## 3. Como o GraphQL contribui para os RNFs
+## 2. Posicionamento: BFF no history-service (não um gateway separado)
+
+O `history-service` já é a fachada agregadora da plataforma; com o GraphQL ele passa a operar como **BFF (Backend for Frontend) da camada de distribuição**, com dois transportes sobre a mesma lógica:
+
+- `GET /v1/patients/{uuid}/clinical-timeline` — REST, contrato inalterado
+- `POST /graphql` — consulta declarativa
+
+**Por que não criar um 11º serviço como gateway:** o `history-service` concentra a verificação obrigatória de consentimento e a publicação de `audit.events`. Um gateway separado criaria um segundo caminho de acesso a dados clínicos, com risco de nascer fora desse portão — uma regressão no RNF-06, que é o núcleo do trabalho. Um serviço, um portão, uma trilha de auditoria. Secundariamente, evita mais um pod competindo por CPU no ambiente de teste.
+
+A ingestão permanece REST (`POST /v1/results` + Kafka): escrita de alto volume vinda de sistemas heterogêneos se beneficia da simplicidade do REST. A separação escrita/leitura configura **CQRS**.
+
+## 3. Implementação
+
+- `spring-boot-starter-graphql`, *schema-first* (`src/main/resources/graphql/schema.graphqls`), SDL publicado em `GET /graphql/schema` — contrato autodocumentado, análogo ao OpenAPI da ingestão (RNF-05).
+- **Mesma lógica de autorização do REST**: ambos chamam `TimelineService.getPatientView()`, que verifica o consentimento **uma vez** antes de qualquer campo ser resolvido e publica `audit.events`. Autorização não depende do transporte.
+- JWT validado uma única vez (`JwtValidator`), compartilhado entre o filtro HTTP (REST e GraphQL) e o contexto GraphQL (`CallerContextInterceptor`). Sem token: 401 antes do GraphQL.
+- **Resolução sob demanda**: `exams` vem da agregação inicial; `triages`, `notifications` e `auditTrail` só chamam os serviços correspondentes **se o campo for solicitado**. Campo não pedido = serviço não consultado = dado não trafegado. Verificado em teste automatizado (`verifyNoInteractions`).
+- **Erros**: HTTP é sempre 200 em GraphQL; a semântica vai em `errors[].extensions.classification` — `FORBIDDEN` (consent negado), `UNAUTHORIZED`, `NOT_FOUND`.
+- **Limites anti-abuso**: profundidade 5 e complexidade 100 rejeitam queries aninhadas antes de executar qualquer resolver — compensa a perda de granularidade do rate limit por rota do Kong, já que há um único endpoint `/graphql` (RNF-06).
+- N+1 não se aplica: cada resolver faz no máximo uma chamada por consulta, sobre coleções já materializadas.
+
+## 4. Contribuição por requisito
 
 | RNF | Contribuição |
 |---|---|
-| RNF-01 Desempenho | Menos bytes por resposta (sem *over-fetching*) → menor latência de serialização e transferência; medido em `tests/k6/rest-vs-graphql.js` |
-| RNF-05 Interoperabilidade | Schema tipado = contrato; consumidores novos não exigem `/v2`; introspecção substitui documentação manual |
-| RNF-06 Consentimento | Consent checado antes de qualquer campo; depth/complexity limit como defesa adicional |
-| RNF-03 Segurança | Mesmo JWT, mesmo validador; `/graphql` passa pelo Kong e pelo mTLS do Istio como qualquer rota |
+| RNF-05 Interoperabilidade | Schema tipado como contrato; visão consolidada reduz os pontos de integração do consumidor externo (4 chamadas → 1) |
+| RNF-06 Consentimento / privacidade | Minimização de dados no protocolo; consent verificado uma vez para toda a visão; limites de profundidade/complexidade |
+| RNF-01 Desempenho | Menos bytes por resposta e menos round-trips por visão consolidada |
+| RNF-03 Segurança | Mesmo JWT e mesmo mTLS do restante da malha; `/graphql` passa pelo Kong como qualquer rota |
 
-## 4. Trade-offs (reconhecer no TCC — a banca vai perguntar)
+## 5. Trade-offs (reconhecer no TCC)
 
-- **Cache HTTP** é mais difícil (tudo é `POST /graphql`). Mitigação futura: *persisted queries* + cache por hash.
-- **Rate limiting por recurso** migra do gateway para a camada GraphQL (depth/complexity). Limite por paciente/instituição passa a ser responsabilidade do `consent-service`/`audit-service` (anomaly detection).
-- **Curva de aprendizado** para integradores acostumados a REST; por isso a ingestão permanece REST.
-- **Códigos HTTP** não refletem erros de negócio — clientes precisam inspecionar `errors[]`.
+- **Cache HTTP** é mais difícil (tudo é `POST /graphql`). Mitigação futura: *persisted queries* com cache por hash.
+- **Rate limiting por recurso** migra do gateway para a camada GraphQL (profundidade/complexidade) e para o `audit-service` (detecção de anomalia por volume).
+- **Curva de aprendizado** para integradores — por isso a ingestão permanece REST.
+- **Códigos HTTP** não refletem erros de negócio; clientes precisam inspecionar `errors[]`.
 
-## 5. Experimento que sustenta a decisão
+## 6. Evidências
 
-`tests/k6/rest-vs-graphql.js` mede, para a mesma consulta, três variantes em sequência (200 VUs × 3 min cada): REST payload completo, GraphQL com todos os campos (paridade), GraphQL com 3 campos (resumo clínico). Métricas: P95 e **bytes por resposta** (`resp_bytes`). O resultado esperado é redução substancial de bytes na variante seletiva com latência igual ou menor — a evidência quantitativa da otimização sugerida pelo orientador. Com histórico de 30 exames/paciente, a variante mínima transfere aproximadamente metade dos bytes do REST; o número exato deve vir das rodadas na VM.
+**Experimento** (`tests/k6/minimizacao-dados.js`) — cinco variantes em sequência, 200 VUs cada:
 
-## 6. Teste automatizado
+| Variante | O que representa | Métrica |
+|---|---|---|
+| `baseline_full` | REST, payload completo e fixo | bytes, 1 round-trip |
+| `declarado_full` | GraphQL declarando todos os campos (controle) | bytes |
+| `declarado_min` | GraphQL declarando 3 campos (resumo clínico) | **bytes — minimização** |
+| `baseline_multi` | 4 chamadas REST para montar a visão consolidada | bytes, **4 round-trips** |
+| `consolidado` | A mesma visão em 1 query declarativa | bytes, **1 round-trip** |
 
-`history-service/src/test/java/.../HistoryGraphQLTest.java` sobe o serviço real (HTTP, filtro JWT, interceptor, resolvers) com os clients a montante mockados e valida: consulta seletiva sem campos extras, filtros, `FORBIDDEN` sem consent (+ auditoria `READ_TIMELINE_DENIED`), 401 sem token, rejeição por profundidade e paridade com o REST. Executar: `cd history-service && mvn test`.
+Duas afirmações sustentadas por números: *minimização* (baseline_full × declarado_min) e *redução de pontos de integração* (baseline_multi × consolidado).
 
-## 7. Referências sugeridas para o TCC
+**Teste automatizado** (`HistoryGraphQLTest`, 10 casos): consulta seletiva sem campos extras, campo não solicitado não aciona o serviço a montante, visão consolidada com consent verificado uma única vez, `FORBIDDEN` sem consent (nenhum serviço consultado), 401 sem token, rejeição por profundidade, filtros e paridade com o REST. `cd history-service && mvn test`.
 
-- Hartig, O.; Pérez, J. 2018. Semantics and Complexity of GraphQL. *Proceedings of the 2018 World Wide Web Conference (WWW '18)*. — formaliza a linguagem e a complexidade de queries (fundamenta o limite de profundidade/complexidade).
-- Brito, G.; Valente, M.T. 2020. REST vs GraphQL: A Controlled Experiment. *IEEE International Conference on Software Architecture (ICSA)*. — experimento controlado comparando REST e GraphQL.
-- Brito, G.; Mombach, T.; Valente, M.T. 2019. Migrating to GraphQL: A Practical Assessment. *IEEE SANER*. — quantifica a redução de payload em migrações REST→GraphQL.
-- The GraphQL Foundation. GraphQL Specification. https://spec.graphql.org/ — especificação oficial.
+## 7. Onde entra no documento final
 
-> Verifique os dados bibliográficos (autores, ano, veículo) nas fontes originais antes de citar; formate conforme as normas do MBA USP/Esalq.
+Um subtópico curto em *Resultados e Discussão*, subordinado à discussão de interoperabilidade e privacidade — não uma seção própria. Aproximadamente meia página: tabela de bytes e round-trips, dois parágrafos ligando à LGPD e a Cavoukian (2011). Os resultados de destaque continuam sendo escalabilidade sob carga, HPA, mTLS, consent inline e taxa de erro zero.
+
+Os **objetivos específicos do projeto aprovado permanecem inalterados**: o GraphQL é meio para o objetivo (iii) (Privacidade por Design) e cabe no (ii) (padrões de comunicação). Promovê-lo a objetivo próprio contrariaria o princípio de que a tecnologia é o meio, não o fim.
+
+## 8. Referências sugeridas
+
+- Hartig, O.; Pérez, J. 2018. Semantics and Complexity of GraphQL. *WWW '18*. — fundamenta os limites de profundidade/complexidade.
+- Brito, G.; Valente, M.T. 2020. REST vs GraphQL: A Controlled Experiment. *IEEE ICSA*.
+- Brito, G.; Mombach, T.; Valente, M.T. 2019. Migrating to GraphQL: A Practical Assessment. *IEEE SANER*. — quantifica redução de payload.
+- The GraphQL Foundation. GraphQL Specification. https://spec.graphql.org/
+
+> Confirme autores, ano e veículo nas fontes originais antes de citar; formate conforme as normas do MBA USP/Esalq.

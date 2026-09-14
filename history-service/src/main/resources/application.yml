@@ -32,6 +32,9 @@ downstream:
   patient-service: ${DOWNSTREAM_PATIENT_URL:http://localhost:8081}
   result-service: ${DOWNSTREAM_RESULT_URL:http://localhost:8084}
   consent-service: ${DOWNSTREAM_CONSENT_URL:http://localhost:8086}
+  triage-service: ${DOWNSTREAM_TRIAGE_URL:http://localhost:8090}
+  notification-service: ${DOWNSTREAM_NOTIFICATION_URL:http://localhost:8089}
+  audit-service: ${DOWNSTREAM_AUDIT_URL:http://localhost:8088}
 
 management:
   endpoints:

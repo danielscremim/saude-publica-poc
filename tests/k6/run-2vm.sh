@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 : "${BASE_HOST:?Defina BASE_HOST=<IP da VM-1>}"
 KONG_PORT="${KONG_PORT:-8000}"
 ROUNDS="${ROUNDS:-3}"
-SCENARIOS="${SCENARIOS:-design load1000 graphql}"
+SCENARIOS="${SCENARIOS:-design load1000 minimizacao}"
 OUT="resultados/$(date +%Y%m%d-%H%M)"; mkdir -p "$OUT"
 E=(-e BASE_HOST="$BASE_HOST" -e KONG_PORT="$KONG_PORT")
 
@@ -31,7 +31,7 @@ for sc in $SCENARIOS; do
   case "$sc" in
     design)   run design_150vus  -e MAX_VUS=150  -e THRESHOLDS=design load.js ;;
     load1000) run load_1000vus   -e MAX_VUS=1000 -e THRESHOLDS=poc    load.js ;;
-    graphql)  run rest_vs_graphql -e EXAMS_PER_PATIENT=30 rest-vs-graphql.js ;;
+    minimizacao) run minimizacao -e EXAMS_PER_PATIENT=30 minimizacao-dados.js ;;
     stress)   run stress          stress.js ;;
     *) echo "cenario desconhecido: $sc" ;;
   esac

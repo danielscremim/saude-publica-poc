@@ -40,6 +40,12 @@ spec:
               valueFrom: { configMapKeyRef: { name: shared-config, key: DOWNSTREAM_RESULT_URL } }
             - name: DOWNSTREAM_CONSENT_URL
               valueFrom: { configMapKeyRef: { name: shared-config, key: DOWNSTREAM_CONSENT_URL } }
+            - name: DOWNSTREAM_TRIAGE_URL
+              valueFrom: { configMapKeyRef: { name: shared-config, key: DOWNSTREAM_TRIAGE_URL } }
+            - name: DOWNSTREAM_NOTIFICATION_URL
+              valueFrom: { configMapKeyRef: { name: shared-config, key: DOWNSTREAM_NOTIFICATION_URL } }
+            - name: DOWNSTREAM_AUDIT_URL
+              valueFrom: { configMapKeyRef: { name: shared-config, key: DOWNSTREAM_AUDIT_URL } }
           readinessProbe:
             httpGet: { path: /actuator/health/readiness, port: 8087 }
             initialDelaySeconds: 30

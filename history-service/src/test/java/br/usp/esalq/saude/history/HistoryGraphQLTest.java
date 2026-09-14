@@ -1,9 +1,15 @@
 package br.usp.esalq.saude.history;
 
+import br.usp.esalq.saude.history.client.AuditClient;
 import br.usp.esalq.saude.history.client.ConsentClient;
+import br.usp.esalq.saude.history.client.NotificationClient;
+import br.usp.esalq.saude.history.client.TriageClient;
 import br.usp.esalq.saude.history.client.PatientClient;
 import br.usp.esalq.saude.history.client.ResultClient;
+import br.usp.esalq.saude.history.dto.AuditLogDto;
 import br.usp.esalq.saude.history.dto.ConsentCheckDto;
+import br.usp.esalq.saude.history.dto.NotificationDto;
+import br.usp.esalq.saude.history.dto.TriageDto;
 import br.usp.esalq.saude.history.dto.PatientDto;
 import br.usp.esalq.saude.history.dto.ResultDto;
 import br.usp.esalq.saude.history.service.AuditPublisher;
@@ -29,7 +35,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,6 +58,9 @@ class HistoryGraphQLTest {
     @MockBean PatientClient patientClient;
     @MockBean ResultClient resultClient;
     @MockBean ConsentClient consentClient;
+    @MockBean TriageClient triageClient;
+    @MockBean NotificationClient notificationClient;
+    @MockBean AuditClient auditClient;
     @MockBean AuditPublisher auditPublisher;   // evita Kafka real
 
     final UUID patient = UUID.randomUUID();
@@ -72,6 +83,18 @@ class HistoryGraphQLTest {
                 new ResultDto(UUID.randomUUID(), patient, "GLICEMIA", "UBS", 98.5, "mg/dL", Instant.parse("2026-01-10T10:00:00Z")),
                 new ResultDto(UUID.randomUUID(), patient, "COLESTEROL", "LAB_PRIVADO", 190.0, "mg/dL", Instant.parse("2026-03-05T10:00:00Z")),
                 new ResultDto(UUID.randomUUID(), patient, "GLICEMIA", "HOSPITAL_PRIVADO", 110.2, "mg/dL", Instant.parse("2026-06-01T10:00:00Z"))));
+
+        when(triageClient.findByPatient(patient)).thenReturn(List.of(
+                new TriageDto(UUID.randomUUID(), patient, "Enf. Ana", "UBS Centro",
+                        130, 85, 78, 16, 36.8, 97, 3, "Cefaleia", "GREEN",
+                        Instant.parse("2026-05-20T08:00:00Z"))));
+        when(notificationClient.findByPatient(patient)).thenReturn(List.of(
+                new NotificationDto(UUID.randomUUID(), patient, "LOG", "Resultado disponivel",
+                        "Seu exame esta pronto", "SENT",
+                        Instant.parse("2026-06-01T10:05:00Z"), Instant.parse("2026-06-01T10:05:01Z"))));
+        when(auditClient.findByPatient(patient)).thenReturn(List.of(
+                new AuditLogDto(UUID.randomUUID(), "hospital-privado-x", patient, "READ_TIMELINE",
+                        "TREATMENT", "history-service", Instant.parse("2026-06-02T09:00:00Z"))));
     }
 
     private HttpGraphQlTester tester(String bearer) {
@@ -171,5 +194,83 @@ class HistoryGraphQLTest {
                 .jsonPath("$.totalExams").isEqualTo(3)
                 .jsonPath("$.exams[0].examType").isEqualTo("GLICEMIA")
                 .jsonPath("$.exams[0].origin").exists();   // REST devolve TODOS os campos (over-fetching)
+    }
+
+    // ---------------- Agregacao sob demanda (minimizacao de dados) ----------------
+
+    @Test
+    void campoNaoSolicitado_naoChamaOServicoCorrespondente() {
+        when(consentClient.check(any(), any()))
+                .thenReturn(new ConsentCheckDto(patient, "HOSP-X", true, "x"));
+
+        // Pede apenas exames: triagem, notificacao e auditoria NAO devem ser buscadas.
+        tester(token).document("""
+                query($id: ID!) { patientHistory(patientUuid: $id) {
+                  exams { examType } } }""")
+                .variable("id", patient.toString())
+                .execute()
+                .path("patientHistory.exams").entityList(Object.class).hasSize(3);
+
+        verifyNoInteractions(triageClient);
+        verifyNoInteractions(notificationClient);
+        verifyNoInteractions(auditClient);
+    }
+
+    @Test
+    void visaoConsolidada_agregaExamesTriagensNotificacoesEAuditoriaEmUmaUnicaRequisicao() {
+        when(consentClient.check(any(), any()))
+                .thenReturn(new ConsentCheckDto(patient, "HOSP-X", true, "x"));
+
+        tester(token).document("""
+                query($id: ID!) { patientHistory(patientUuid: $id, purpose: "TREATMENT") {
+                  patient { name }
+                  exams { examType }
+                  triages { priority unit }
+                  notifications { channel status }
+                  auditTrail { action requesterId } } }""")
+                .variable("id", patient.toString())
+                .execute()
+                .path("patientHistory.patient.name").entity(String.class).isEqualTo("Maria Silva")
+                .path("patientHistory.exams").entityList(Object.class).hasSize(3)
+                .path("patientHistory.triages[0].priority").entity(String.class).isEqualTo("GREEN")
+                .path("patientHistory.notifications[0].status").entity(String.class).isEqualTo("SENT")
+                .path("patientHistory.auditTrail[0].action").entity(String.class).isEqualTo("READ_TIMELINE");
+
+        // Consent verificado UMA vez para a visao inteira
+        verify(consentClient, times(1)).check(eq(patient), eq("HOSP-X"));
+    }
+
+    @Test
+    void semConsentimento_nenhumServicoAMontanteEConsultado() {
+        when(consentClient.check(any(), any()))
+                .thenReturn(new ConsentCheckDto(patient, "HOSP-X", false, null));
+
+        tester(token).document("""
+                query($id: ID!) { patientHistory(patientUuid: $id) {
+                  exams { examType } triages { priority } auditTrail { action } } }""")
+                .variable("id", patient.toString())
+                .execute()
+                .errors().expect(e -> e.getErrorType().toString().equals("FORBIDDEN"));
+
+        verifyNoInteractions(patientClient);
+        verifyNoInteractions(resultClient);
+        verifyNoInteractions(triageClient);
+        verifyNoInteractions(notificationClient);
+        verifyNoInteractions(auditClient);
+    }
+
+    @Test
+    void filtroEValidacaoNosCamposAgregados() {
+        when(consentClient.check(any(), any()))
+                .thenReturn(new ConsentCheckDto(patient, "HOSP-X", true, "x"));
+
+        tester(token).document("""
+                query($id: ID!) { patientHistory(patientUuid: $id) {
+                  triages(priority: "RED") { priority }
+                  notifications(channel: "LOG", limit: 1) { channel } } }""")
+                .variable("id", patient.toString())
+                .execute()
+                .path("patientHistory.triages").entityList(Object.class).hasSize(0)
+                .path("patientHistory.notifications").entityList(Object.class).hasSize(1);
     }
 }

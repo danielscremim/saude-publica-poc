@@ -1,27 +1,36 @@
-# Contrato GraphQL do history-service (camada de DISTRIBUICAO / leitura).
-# Qualquer consumidor autorizado usa este mesmo contrato; o consent do paciente
-# e verificado antes de qualquer campo ser resolvido (RNF-06).
+# Contrato GraphQL do history-service — fachada (BFF) da camada de DISTRIBUICAO.
 #
-# Datas sao expostas como String ISO-8601 (ex.: "2026-09-10T14:32:00Z").
+# Principio: o consumidor declara exatamente os campos de que precisa para a sua
+# finalidade. Campos nao solicitados nao sao buscados nos servicos a montante nem
+# trafegam na resposta — minimizacao de dados (LGPD Art. 6, III; Privacy by Design).
+#
+# O consentimento do paciente e verificado UMA VEZ, antes de qualquer campo ser
+# resolvido, e cada acesso e auditado (RNF-06). Datas sao String ISO-8601.
 
 type Query {
   """
-  Linha do tempo clinica do paciente. Requer JWT valido (header Authorization)
-  e consentimento ativo da instituicao do JWT para o paciente.
-  Sem consentimento: erro com classification FORBIDDEN.
+  Visao consolidada do paciente. Requer JWT valido (header Authorization) e
+  consentimento ativo da instituicao do JWT. Sem consentimento: FORBIDDEN.
   """
-  patientHistory(patientUuid: ID!, purpose: String): Timeline!
+  patientHistory(patientUuid: ID!, purpose: String): PatientView!
 }
 
-type Timeline {
+type PatientView {
   patientUuid: ID!
   patient: Patient!
-  """
-  Exames do paciente (mais recentes primeiro). Filtros opcionais:
-  examType (ex.: "GLICEMIA") e limit (maximo de itens).
-  """
+
+  "Exames com resultado (mais recentes primeiro)."
   exams(examType: String, limit: Int): [Exam!]!
   totalExams: Int!
+
+  "Triagens realizadas (mais recentes primeiro). Buscado apenas se solicitado."
+  triages(priority: String, limit: Int): [Triage!]!
+
+  "Notificacoes enviadas ao paciente. Buscado apenas se solicitado."
+  notifications(channel: String, limit: Int): [Notification!]!
+
+  "Trilha de acesso aos dados deste paciente (transparencia LGPD). Buscado apenas se solicitado."
+  auditTrail(action: String, limit: Int): [AuditEntry!]!
 }
 
 type Patient {
@@ -37,4 +46,40 @@ type Exam {
   resultValue: Float!
   resultUnit: String!
   completedAt: String!
+}
+
+type Triage {
+  id: ID!
+  performedBy: String
+  unit: String
+  bloodPressureSystolic: Int
+  bloodPressureDiastolic: Int
+  heartRate: Int
+  respiratoryRate: Int
+  temperature: Float
+  oxygenSaturation: Int
+  painLevel: Int
+  complaint: String
+  "Classificacao de Manchester: RED, ORANGE, YELLOW, GREEN, BLUE."
+  priority: String
+  performedAt: String
+}
+
+type Notification {
+  id: ID!
+  channel: String
+  subject: String
+  message: String
+  status: String
+  createdAt: String
+  sentAt: String
+}
+
+type AuditEntry {
+  eventId: ID!
+  requesterId: String
+  action: String
+  purpose: String
+  sourceService: String
+  timestamp: String
 }

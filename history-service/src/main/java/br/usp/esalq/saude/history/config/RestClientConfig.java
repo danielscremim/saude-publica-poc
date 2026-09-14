@@ -7,7 +7,7 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 
-/** RestClients dedicados para os 3 servicos a montante. */
+/** RestClients dedicados para os servicos a montante agregados pela fachada. */
 @Configuration
 public class RestClientConfig {
 
@@ -23,6 +23,21 @@ public class RestClientConfig {
 
     @Bean
     public RestClient consentRestClient(@Value("${downstream.consent-service}") String baseUrl) {
+        return RestClient.builder().baseUrl(baseUrl).build();
+    }
+
+    @Bean
+    public RestClient triageRestClient(@Value("${downstream.triage-service}") String baseUrl) {
+        return RestClient.builder().baseUrl(baseUrl).build();
+    }
+
+    @Bean
+    public RestClient notificationRestClient(@Value("${downstream.notification-service}") String baseUrl) {
+        return RestClient.builder().baseUrl(baseUrl).build();
+    }
+
+    @Bean
+    public RestClient auditRestClient(@Value("${downstream.audit-service}") String baseUrl) {
         return RestClient.builder().baseUrl(baseUrl).build();
     }
 
