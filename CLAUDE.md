@@ -1,6 +1,12 @@
 # CLAUDE.md — Plataforma de Distribuição de Dados em Saúde Pública
 
 > Arquivo de contexto para o Claude Code. Leia antes de qualquer tarefa neste repositório.
+>
+> **Leia também `docs/decisoes-do-projeto.md`** antes de redigir texto do TCC, produzir
+> diagramas ou mudar enquadramento. Este arquivo diz *o que* o projeto é; aquele registra
+> *por que* cada decisão foi tomada e **o que já foi descartado** — inclusive alternativas
+> que parecem razoáveis mas foram rejeitadas (ex.: enquadrar o GraphQL como comparação
+> REST × GraphQL, criar objetivo específico para GraphQL, gateway GraphQL separado).
 
 ---
 
