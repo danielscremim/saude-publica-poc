@@ -125,9 +125,9 @@ encerrar() {
     echo "=== data ==="; date -Is
     echo; echo "=== pods (final) ==="; kubectl -n "$NS" get pods -o wide
     echo; echo "=== hpa (final) ==="; kubectl -n "$NS" get hpa
-    echo; echo "=== reinicios e ultimo motivo de termino ==="
+    echo; echo "=== reinicios por conteiner (aplicacao E sidecar) ==="
     kubectl -n "$NS" get pods -o custom-columns=\
-'POD:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,MOTIVO:.status.containerStatuses[0].lastState.terminated.reason'
+'POD:.metadata.name,CONTEINER:.status.containerStatuses[*].name,RESTARTS:.status.containerStatuses[*].restartCount,MOTIVO:.status.containerStatuses[*].lastState.terminated.reason,EXIT:.status.containerStatuses[*].lastState.terminated.exitCode'
     echo; echo "=== linhas por tabela (EXATO - use estes numeros no texto) ==="
     contar_tabelas_exato
     echo; echo "=== linhas por tabela (estimativa, p/ comparar com tabelas.csv) ==="
