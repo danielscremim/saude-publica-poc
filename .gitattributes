@@ -1,0 +1,8 @@
+# Scripts e manifests SEMPRE com quebra de linha Unix, independentemente do
+# core.autocrlf de quem clona. No Linux, um .sh com CRLF falha com
+# "bad interpreter: No such file or directory" - erro que parece arquivo ausente.
+*.sh      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.js      text eol=lf
+Dockerfile text eol=lf
