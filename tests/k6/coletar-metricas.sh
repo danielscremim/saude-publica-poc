@@ -15,6 +15,8 @@
 #   hpa.csv               replicas x tempo -> tempo de reacao do HPA (Resultado 3)
 #   pools.csv             HikariCP e threads Tomcat -> EXPLICA o ponto de ruptura
 #   kafka-lag.csv         fila acumulada -> evidencia do desacoplamento assincrono
+#   tabelas.csv           linhas por tabela ao longo do tempo -> deriva do banco
+#                         entre rodadas (o cenario faz 20% de escrita)
 #   eventos.txt           Pending / OOMKilled / CrashLoopBackOff -> criterio de ruptura
 #   sar-disco-rede.txt    I/O e retransmissoes (so entra no TCC se acusar saturacao)
 #   snapshot-final.txt
@@ -26,6 +28,40 @@ INTERVALO="${INTERVALO:-5}"
 DURACAO="${DURACAO:-0}"          # 0 = ate Ctrl+C
 OUT="resultados-infra/$(date +%Y%m%d-%H%M)"
 mkdir -p "$OUT"
+
+# Deriva do banco: o cenario de carga faz 20% de escrita (POST /v1/patients), entao
+# a rodada 3 executa contra um banco bem maior que a rodada 1. Sem medir isso, a
+# deriva aparece como desvio-padrao inexplicado na media das 3 rodadas.
+#
+# Usa n_live_tup de pg_stat_user_tables, nao COUNT(*): a estimativa do coletor de
+# estatisticas e lida de uma tabela de sistema, enquanto um COUNT(*) exato varreria
+# milhoes de linhas A CADA CICLO e perturbaria o proprio experimento que se mede.
+contar_tabelas() {
+  kubectl -n "$NS" exec postgres-0 -c postgres -- sh -c     'for db in patientdb examdb resultdb authdb consentdb auditdb notificationdb triagedb; do
+       psql -U saude -d "$db" -t -A -F,          -c "SELECT current_database(), relname, n_live_tup FROM pg_stat_user_tables ORDER BY relname"
+     done' 2>/dev/null | grep -v '^$' || true
+}
+
+# Contagem EXATA, usada so no snapshot final: n_live_tup e estimativa do coletor de
+# estatisticas e pode divergir ate o autovacuum passar. Ao final a carga ja terminou,
+# entao o COUNT(*) exato nao perturba medida nenhuma - e e o numero que vai para o
+# texto. O query_to_xml contorna a impossibilidade de COUNT(*) sobre nome dinamico.
+contar_tabelas_exato() {
+  # O laco roda no bash (nao dentro do container) e o SQL vem por heredoc com
+  # aspas simples desligadas: assim os literais SQL usam aspas simples de verdade.
+  # Aspas duplas NAO servem aqui - no PostgreSQL elas delimitam identificadores,
+  # e xpath("...") seria lido como nome de coluna.
+  local db
+  for db in patientdb examdb resultdb authdb consentdb auditdb notificationdb triagedb; do
+    kubectl -n "$NS" exec -i postgres-0 -c postgres --       psql -U saude -d "$db" -t -A -F, 2>/dev/null <<'SQL'
+SELECT current_database(), relname,
+       (xpath('/row/c/text()',
+              query_to_xml(format('SELECT count(*) AS c FROM %I.%I', schemaname, relname),
+                           false, true, '')))[1]::text::bigint
+FROM pg_stat_user_tables ORDER BY relname;
+SQL
+  done | grep -v '^$' || true
+}
 
 command -v kubectl >/dev/null || { echo "kubectl nao encontrado"; exit 1; }
 kubectl get ns "$NS" >/dev/null 2>&1 || { echo "namespace $NS nao existe (exportou o KUBECONFIG?)"; exit 1; }
@@ -45,6 +81,7 @@ echo "==> Coletando em $OUT (intervalo ${INTERVALO}s). Ctrl+C para encerrar."
   echo; echo "=== requests/limits ==="
   kubectl -n "$NS" get deploy -o custom-columns=\
 'NOME:.metadata.name,CPU_REQ:.spec.template.spec.containers[0].resources.requests.cpu,CPU_LIM:.spec.template.spec.containers[0].resources.limits.cpu,MEM_REQ:.spec.template.spec.containers[0].resources.requests.memory,MEM_LIM:.spec.template.spec.containers[0].resources.limits.memory'
+  echo; echo "=== linhas por tabela (estimativa) ==="; contar_tabelas
   echo; echo "=== disco ==="; df -h /
 } > "$OUT/snapshot-inicial.txt" 2>&1
 
@@ -91,6 +128,10 @@ encerrar() {
     echo; echo "=== reinicios e ultimo motivo de termino ==="
     kubectl -n "$NS" get pods -o custom-columns=\
 'POD:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,MOTIVO:.status.containerStatuses[0].lastState.terminated.reason'
+    echo; echo "=== linhas por tabela (EXATO - use estes numeros no texto) ==="
+    contar_tabelas_exato
+    echo; echo "=== linhas por tabela (estimativa, p/ comparar com tabelas.csv) ==="
+    contar_tabelas
     echo; echo "=== disco ==="; df -h /
   } > "$OUT/snapshot-final.txt" 2>&1
   echo "==> Artefatos em $(pwd)/$OUT"
@@ -104,6 +145,7 @@ echo "ts,pod,cpu,mem" > "$OUT/pods.csv"
 echo "ts,hpa,replicas_atuais,replicas_desejadas,alvo_cpu" > "$OUT/hpa.csv"
 echo "ts,metrica,servico,valor" > "$OUT/pools.csv"
 echo "ts,grupo,topico,lag" > "$OUT/kafka-lag.csv"
+echo "ts,banco,tabela,linhas_estimadas" > "$OUT/tabelas.csv"
 : > "$OUT/eventos.txt"
 
 INICIO=$(date +%s); CICLO=0
@@ -138,6 +180,12 @@ while :; do
       /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
       --all-groups --describe 2>/dev/null \
       | awk -v t="$TS" 'NR>1 && $6 ~ /^[0-9]+$/ {print t","$1","$2","$6}' >> "$OUT/kafka-lag.csv" || true
+  fi
+
+  # Contagem de linhas a cada 12 ciclos (1 min com INTERVALO=5). Resolucao de
+  # segundos nao acrescenta nada: o que interessa e a tendencia entre rodadas.
+  if [ $((CICLO % 12)) -eq 0 ]; then
+    contar_tabelas | sed "s/^/$TS,/" >> "$OUT/tabelas.csv"
   fi
 
   # Eventos que caracterizam ruptura de infraestrutura.
