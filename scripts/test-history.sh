@@ -6,11 +6,13 @@
 #   - Cada acesso (autorizado ou negado) publica audit.events
 set -e
 
-PATIENT_URL="http://localhost:8081"
-EXAM_URL="http://localhost:8082"
-AUTH_URL="http://localhost:8085"
-CONSENT_URL="http://localhost:8086"
-HISTORY_URL="http://localhost:8087"
+# Sem BASE: portas diretas (IDE/Docker Compose). Com BASE: tudo pelo gateway.
+#   BASE=http://localhost:8000 test-history.sh   (Kubernetes, via Kong)
+PATIENT_URL="${BASE:-http://localhost:8081}"
+EXAM_URL="${BASE:-http://localhost:8082}"
+AUTH_URL="${BASE:-http://localhost:8085}"
+CONSENT_URL="${BASE:-http://localhost:8086}"
+HISTORY_URL="${BASE:-http://localhost:8087}"
 
 json_field() { echo "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
 

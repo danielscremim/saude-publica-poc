@@ -6,9 +6,11 @@
 #   4. GET /v1/notifications/patient/{uuid} retorna a notificacao gerada.
 set -e
 
-PATIENT_URL="http://localhost:8081"
-EXAM_URL="http://localhost:8082"
-NOTIF_URL="http://localhost:8089"
+# Sem BASE: portas diretas (IDE/Docker Compose). Com BASE: tudo pelo gateway.
+#   BASE=http://localhost:8000 test-notification.sh   (Kubernetes, via Kong)
+PATIENT_URL="${BASE:-http://localhost:8081}"
+EXAM_URL="${BASE:-http://localhost:8082}"
+NOTIF_URL="${BASE:-http://localhost:8089}"
 
 json_field() { echo "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
 

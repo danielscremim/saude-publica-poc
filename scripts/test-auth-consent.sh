@@ -10,9 +10,11 @@
 #   6. Revoga e verifica check -> granted=false (evento consent.revoked no Kafka).
 set -e
 
-PATIENT_URL="http://localhost:8081"
-AUTH_URL="http://localhost:8085"
-CONSENT_URL="http://localhost:8086"
+# Sem BASE: portas diretas (IDE/Docker Compose). Com BASE: tudo pelo gateway.
+#   BASE=http://localhost:8000 test-auth-consent.sh   (Kubernetes, via Kong)
+PATIENT_URL="${BASE:-http://localhost:8081}"
+AUTH_URL="${BASE:-http://localhost:8085}"
+CONSENT_URL="${BASE:-http://localhost:8086}"
 
 # Pequeno helper para extrair campos JSON sem depender de jq.
 json_field() {

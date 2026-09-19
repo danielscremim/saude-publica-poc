@@ -2,9 +2,11 @@
 # Testa o fluxo completo: cadastro -> exame -> processamento -> resultado
 set -e
 
-PATIENT_URL="http://localhost:8081"
-EXAM_URL="http://localhost:8082"
-RESULT_URL="http://localhost:8084"
+# Sem BASE: portas diretas (IDE/Docker Compose). Com BASE: tudo pelo gateway.
+#   BASE=http://localhost:8000 test-flow.sh   (Kubernetes, via Kong)
+PATIENT_URL="${BASE:-http://localhost:8081}"
+EXAM_URL="${BASE:-http://localhost:8082}"
+RESULT_URL="${BASE:-http://localhost:8084}"
 
 echo "==> 1. Cadastrando paciente..."
 RESP=$(curl -s -X POST "$PATIENT_URL/v1/patients" \

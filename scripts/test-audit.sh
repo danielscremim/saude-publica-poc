@@ -7,12 +7,14 @@
 #   4. Consulta GET /v1/audit/anomalies       -> espera >= 1 anomaly.
 set -e
 
-PATIENT_URL="http://localhost:8081"
-EXAM_URL="http://localhost:8082"
-AUTH_URL="http://localhost:8085"
-CONSENT_URL="http://localhost:8086"
-HISTORY_URL="http://localhost:8087"
-AUDIT_URL="http://localhost:8088"
+# Sem BASE: portas diretas (IDE/Docker Compose). Com BASE: tudo pelo gateway.
+#   BASE=http://localhost:8000 test-audit.sh   (Kubernetes, via Kong)
+PATIENT_URL="${BASE:-http://localhost:8081}"
+EXAM_URL="${BASE:-http://localhost:8082}"
+AUTH_URL="${BASE:-http://localhost:8085}"
+CONSENT_URL="${BASE:-http://localhost:8086}"
+HISTORY_URL="${BASE:-http://localhost:8087}"
+AUDIT_URL="${BASE:-http://localhost:8088}"
 
 json_field() { echo "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
 

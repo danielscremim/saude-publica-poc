@@ -10,11 +10,13 @@
 #   - GET /v1/audit/patient/{uuid}      -> WRITE_RESULT registrado em audit.events
 set -e
 
-PATIENT_URL="http://localhost:8081"
-AUTH_URL="http://localhost:8085"
-RESULT_URL="http://localhost:8084"
-NOTIF_URL="http://localhost:8089"
-AUDIT_URL="http://localhost:8088"
+# Sem BASE: portas diretas (IDE/Docker Compose). Com BASE: tudo pelo gateway.
+#   BASE=http://localhost:8000 test-bidirectional.sh   (Kubernetes, via Kong)
+PATIENT_URL="${BASE:-http://localhost:8081}"
+AUTH_URL="${BASE:-http://localhost:8085}"
+RESULT_URL="${BASE:-http://localhost:8084}"
+NOTIF_URL="${BASE:-http://localhost:8089}"
+AUDIT_URL="${BASE:-http://localhost:8088}"
 
 json_field() { echo "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
 

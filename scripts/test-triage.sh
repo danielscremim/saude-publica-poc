@@ -7,8 +7,10 @@
 #   5. Lista historico por paciente.
 set -e
 
-PATIENT_URL="http://localhost:8081"
-TRIAGE_URL="http://localhost:8090"
+# Sem BASE: portas diretas (IDE/Docker Compose). Com BASE: tudo pelo gateway.
+#   BASE=http://localhost:8000 test-triage.sh   (Kubernetes, via Kong)
+PATIENT_URL="${BASE:-http://localhost:8081}"
+TRIAGE_URL="${BASE:-http://localhost:8090}"
 
 json_field() { echo "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
 
