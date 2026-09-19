@@ -90,6 +90,16 @@ spec:
             - { name: KONG_PROXY_ERROR_LOG, value: "/dev/stderr" }
             - { name: KONG_ADMIN_ERROR_LOG, value: "/dev/stderr" }
             - { name: KONG_ADMIN_LISTEN, value: "0.0.0.0:8001" }
+            # O nginx do Kong le a contagem de CPUs DO NO (32 nesta VM), ignora o
+            # limite do container e sobe 33 workers -> estourou 1 GiB e o kubelet
+            # matou o processo (exit 137). Fixar o numero e obrigatorio em no grande.
+            - { name: KONG_NGINX_WORKER_PROCESSES, value: "4" }
+            # RNF-01: o padrao herdado e RLIMIT_NOFILE 1024. Com 1000 VUs o
+            # gateway esgotaria descritores e registraria erro que NAO e do
+            # sistema sob teste.
+            - { name: KONG_NGINX_MAIN_WORKER_RLIMIT_NOFILE, value: "65536" }
+            - { name: KONG_NGINX_EVENTS_WORKER_CONNECTIONS, value: "16384" }
+            - { name: KONG_MEM_CACHE_SIZE, value: "256m" }
           volumeMounts:
             - { name: config, mountPath: /kong }
           readinessProbe:
@@ -97,8 +107,10 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
-            requests: { cpu: "100m", memory: "256Mi" }
-            limits:   { cpu: "500m", memory: "1Gi" }
+            # Todo o trafego norte-sul passa aqui. Com 500m o proprio gateway
+            # viraria o gargalo e a medida deixaria de ser da arquitetura.
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "4000m", memory: "2Gi" }
       volumes:
         - name: config
           configMap: { name: kong-config }

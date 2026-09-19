@@ -8,6 +8,16 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/consentdb}
     username: ${SPRING_DATASOURCE_USERNAME:saude}
     password: ${SPRING_DATASOURCE_PASSWORD:saude}
+    # RNF-01: o pool precisa CABER no max_connections do Postgres (500, ver
+    # k8s/10-postgres.yaml). Sao 8 servicos com banco x ate 10 replicas (HPA)
+    # x este tamanho = 8*10*5 = 400, com folga para conexoes administrativas.
+    # Sem esse limite o HikariCP usa 10 por instancia e o banco responde
+    # "FATAL: sorry, too many clients already" durante o escalonamento.
+    hikari:
+      maximum-pool-size: ${HIKARI_MAX_POOL:5}
+      minimum-idle: ${HIKARI_MIN_IDLE:1}
+      connection-timeout: 10000
+      max-lifetime: 900000
   jpa:
     hibernate:
       ddl-auto: update

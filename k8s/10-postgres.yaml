@@ -49,6 +49,19 @@ spec:
       containers:
         - name: postgres
           image: postgres:16-alpine
+          # max_connections padrao da imagem e 100. Com 8 servicos com banco,
+          # ate 10 replicas cada (HPA) e pool de 5, o pico e ~400 conexoes:
+          # sem este ajuste os pods morrem com
+          # "FATAL: sorry, too many clients already" durante o escalonamento.
+          args:
+            - -c
+            - max_connections=500
+            - -c
+            - shared_buffers=512MB
+            - -c
+            - effective_cache_size=1536MB
+            - -c
+            - max_wal_size=2GB
           ports:
             - containerPort: 5432
           env:
@@ -63,17 +76,26 @@ spec:
               mountPath: /var/lib/postgresql/data
             - name: init
               mountPath: /docker-entrypoint-initdb.d
+            # /dev/shm padrao do container e 64 MB; o Postgres usa memoria
+            # compartilhada para workers paralelos e falha ao esgota-la.
+            - name: dshm
+              mountPath: /dev/shm
           readinessProbe:
             exec: { command: ["pg_isready", "-U", "saude"] }
             initialDelaySeconds: 10
             periodSeconds: 5
           resources:
-            requests: { cpu: "200m", memory: "256Mi" }
-            limits:   { cpu: "1000m", memory: "1Gi" }
+            # Limite anterior (1 core / 1 GiB) transformaria o banco no gargalo
+            # do experimento. Com folga, o ponto de ruptura medido passa a ser
+            # da ARQUITETURA, nao de um teto arbitrario de configuracao.
+            requests: { cpu: "1000m", memory: "1Gi" }
+            limits:   { cpu: "8000m", memory: "4Gi" }
       volumes:
         - name: init
           configMap:
             name: postgres-init
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 1Gi }
   volumeClaimTemplates:
     - metadata:
         name: data
