@@ -21,6 +21,10 @@ spec:
   template:
     metadata:
       labels: { app: triage-service, version: v1 }
+      annotations:                            # RNF-04: metricas de aplicacao
+        prometheus.io/scrape: "true"           # o istio-agent faz merge com as metricas do Envoy
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8090"
     spec:
       containers:
         - name: triage-service

@@ -40,6 +40,9 @@ auth:
     issuer: ${AUTH_JWT_ISSUER:https://saude-poc.usp.esalq/auth}
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:

@@ -37,6 +37,9 @@ downstream:
   audit-service: ${DOWNSTREAM_AUDIT_URL:http://localhost:8088}
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:

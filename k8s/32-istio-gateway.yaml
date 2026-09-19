@@ -31,6 +31,13 @@ spec:
       route:
         - destination: { host: history-service, port: { number: 8087 } }
       timeout: 800ms   # RNF-05
+    # GraphQL (leitura/BFF): mesma paridade de rotas do Kong, para que a bateria
+    # k6 possa entrar tanto pelo Kong (:8000) quanto pelo IngressGateway (:80).
+    - match: [{ uri: { prefix: "/graphql" } }]
+      route: [{ destination: { host: history-service, port: { number: 8087 } } }]
+      timeout: 800ms   # RNF-05
+    - match: [{ uri: { prefix: "/graphiql" } }]
+      route: [{ destination: { host: history-service, port: { number: 8087 } } }]
     - match: [{ uri: { prefix: "/v1/patients" } }]
       route: [{ destination: { host: patient-service, port: { number: 8081 } } }]
     - match: [{ uri: { prefix: "/v1/exams" } }]

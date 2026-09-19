@@ -6,3 +6,13 @@ target/
 .vscode/
 .DS_Store
 HELP.md
+
+# Documento de entrega da infraestrutura (IPs internos de terceiro - nao publicar)
+Entrega-*.pdf
+# Patches de transferencia entre maquinas (o conteudo ja esta nos commits)
+*.patch
+# Copia duplicada de docs/decisoes-do-projeto.md
+/decisoes-do-projeto.md
+# Saidas das baterias de teste
+tests/k6/resultados/
+tests/k6/resultados-infra/

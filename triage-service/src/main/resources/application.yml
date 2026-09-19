@@ -16,6 +16,9 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:

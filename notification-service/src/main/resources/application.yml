@@ -28,6 +28,9 @@ spring:
         spring.json.use.type.headers: false
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:

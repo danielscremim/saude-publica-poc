@@ -1,0 +1,93 @@
+# RNF-04 — coleta das metricas de aplicacao pelo Prometheus JA INSTALADO na VM-1
+# (kube-prometheus-stack, namespace monitoring).
+#
+# POR QUE UM PodMonitor E NAO SO AS ANOTACOES prometheus.io/scrape:
+# o kube-prometheus-stack NAO le anotacoes prometheus.io/* (isso e do Prometheus
+# "cru"). Ele descobre alvos por CRD: ServiceMonitor / PodMonitor.
+#
+# POR QUE A PORTA 15020 E NAO A PORTA DA APLICACAO:
+# com mTLS STRICT (30-istio-mtls.yaml) um scrape em texto puro na porta do app
+# seria rejeitado. O istio-agent resolve isso: quando o pod tem as anotacoes
+# prometheus.io/scrape+path+port (ver os Deployments 2x-*.yaml), ele coleta o
+# /actuator/prometheus da aplicacao, junta com as metricas do Envoy e publica
+# tudo em texto puro na porta 15020, caminho /stats/prometheus.
+# Resultado: metricas de JVM, HikariCP e Tomcat (aplicacao) + latencia e
+# requisicoes por servico (Envoy) no mesmo alvo.
+#
+# ATENCAO — LABEL DE SELECAO:
+# o Prometheus do chart so enxerga monitores com o label da release Helm.
+# Aqui esta "monitoring" (deduzido do Service monitoring-grafana). Confirme com:
+#   helm list -A
+#   kubectl -n monitoring get prometheus -o yaml | grep -A5 podMonitorSelector
+# Se a release tiver outro nome, ajuste o label release: abaixo e reaplique.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: saude-poc-apps
+  namespace: saude-poc
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [saude-poc]
+  selector:
+    matchLabels:
+      version: v1        # label presente so nos 10 microsservicos (nao em kong/kafka/postgres)
+  podMetricsEndpoints:
+    - targetPort: 15020
+      path: /stats/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+      relabelings:
+        # Guarda o nome do servico em uma label estavel para os paineis.
+        - sourceLabels: [__meta_kubernetes_pod_label_app]
+          targetLabel: service
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+---
+# Alerta do RNF-04: "alerta quando P95 > 500 ms".
+# Usa as metricas do Envoy (istio_request_duration_milliseconds), que existem
+# para todo pod do mesh independentemente da instrumentacao da aplicacao.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: saude-poc-rnf
+  namespace: saude-poc
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: saude-poc-rnfs
+      rules:
+        - alert: LatenciaP95AcimaDoRNF01
+          expr: |
+            histogram_quantile(0.95,
+              sum by (destination_service_name, le) (
+                rate(istio_request_duration_milliseconds_bucket{destination_service_namespace="saude-poc"}[5m])
+              )
+            ) > 500
+          for: 2m
+          labels: { severity: warning, rnf: "RNF-01" }
+          annotations:
+            summary: "P95 acima de 500 ms em {{ $labels.destination_service_name }}"
+            description: "RNF-01 exige P95 <= 500 ms sob 1000 requisicoes simultaneas."
+        - alert: TaxaDeErroAcimaDeUmPorCento
+          expr: |
+            sum by (destination_service_name) (
+              rate(istio_requests_total{destination_service_namespace="saude-poc", response_code=~"5.."}[5m])
+            )
+            /
+            sum by (destination_service_name) (
+              rate(istio_requests_total{destination_service_namespace="saude-poc"}[5m])
+            ) > 0.01
+          for: 2m
+          labels: { severity: critical, rnf: "RNF-02" }
+          annotations:
+            summary: "Taxa de erro 5xx acima de 1% em {{ $labels.destination_service_name }}"
+        - alert: PoolHikariEsgotado
+          expr: hikaricp_connections_pending{namespace="saude-poc"} > 0
+          for: 1m
+          labels: { severity: warning, rnf: "RNF-01" }
+          annotations:
+            summary: "Requisicoes aguardando conexao no pool em {{ $labels.service }}"
+            description: "Evidencia de saturacao do HikariCP - explica degradacao no ponto de ruptura."

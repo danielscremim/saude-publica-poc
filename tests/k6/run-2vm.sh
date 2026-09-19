@@ -2,12 +2,13 @@
 # Executa a bateria oficial a partir da VM-2 contra o Kong da VM-1, com rigor
 # estatistico: aquecimento descartado + ROUNDS rodadas por cenario + resumo.csv.
 #   BASE_HOST=<IP_VM1> ./run-2vm.sh
-#   ROUNDS=3 SCENARIOS="design load1000 graphql" BASE_HOST=... ./run-2vm.sh
+#   ROUNDS=3 SCENARIOS="design load1000 minimizacao ruptura" BASE_HOST=... ./run-2vm.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 : "${BASE_HOST:?Defina BASE_HOST=<IP da VM-1>}"
 KONG_PORT="${KONG_PORT:-8000}"
 ROUNDS="${ROUNDS:-3}"
+# Cenarios do plano-teste-estresse.md: design(A) load1000(B) ruptura(C) minimizacao(E)
 SCENARIOS="${SCENARIOS:-design load1000 minimizacao}"
 OUT="resultados/$(date +%Y%m%d-%H%M)"; mkdir -p "$OUT"
 E=(-e BASE_HOST="$BASE_HOST" -e KONG_PORT="$KONG_PORT")
@@ -32,6 +33,12 @@ for sc in $SCENARIOS; do
     design)   run design_150vus  -e MAX_VUS=150  -e THRESHOLDS=design load.js ;;
     load1000) run load_1000vus   -e MAX_VUS=1000 -e THRESHOLDS=poc    load.js ;;
     minimizacao) run minimizacao -e EXAMS_PER_PATIENT=30 minimizacao-dados.js ;;
+    # Ponto de ruptura: taxa de chegada fixa (nao VUs). Roda UMA vez - o teste
+    # termina sozinho no degrau de ruptura, entao repetir 3x so repete o mesmo
+    # ponto. Reporte o degrau e o motivo (erro, P95 ou dropped_iterations).
+    ruptura)  ROUNDS_ORIG=$ROUNDS; ROUNDS=1
+              run ruptura -e START_RPS=200 -e STEP_RPS=200 -e MAX_RPS=2000 ponto-ruptura.js
+              ROUNDS=$ROUNDS_ORIG ;;
     stress)   run stress          stress.js ;;
     *) echo "cenario desconhecido: $sc" ;;
   esac

@@ -51,10 +51,15 @@ metadata:
   name: kong
   namespace: saude-poc
 spec:
-  type: LoadBalancer   # em kind/minikube vira NodePort; em cloud vira LB real
+  # NodePort fixo: o cluster entregue (k3d) esta SEM ServiceLB, entao um Service
+  # do tipo LoadBalancer ficaria eternamente <pending>. O NodePort 30800 e
+  # publicado na porta 8000 da VM-1 pelo load balancer do k3d (ver GUIA-VMS).
+  # NAO usar kubectl port-forward para a carga: a execucao [3] registrada no
+  # cabecalho de tests/k6/load.js mostra ~300 ms de overhead por requisicao.
+  type: NodePort
   ports:
-    - { name: proxy, port: 8000, targetPort: 8000 }
-    - { name: admin, port: 8001, targetPort: 8001 }
+    - { name: proxy, port: 8000, targetPort: 8000, nodePort: 30800 }
+    - { name: admin, port: 8001, targetPort: 8001, nodePort: 30801 }
   selector:
     app: kong
 ---

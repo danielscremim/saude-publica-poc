@@ -35,6 +35,9 @@ audit:
     threshold: ${AUDIT_ANOMALY_THRESHOLD:200}
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:

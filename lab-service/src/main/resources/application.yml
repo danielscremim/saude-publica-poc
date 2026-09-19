@@ -21,6 +21,9 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:

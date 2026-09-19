@@ -23,6 +23,9 @@ spring:
         spring.json.add.type.headers: true
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:

@@ -31,6 +31,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- RNF-04: expoe /actuator/prometheus (JVM, HikariCP, Tomcat) -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <!-- GraphQL: camada de distribuicao/leitura (CQRS: escrita via REST+Kafka, leitura via GraphQL) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -24,6 +24,9 @@ auth:
     expiration-seconds: ${AUTH_JWT_EXPIRATION_SECONDS:3600}  # RNF-03: 1h
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
       exposure:
