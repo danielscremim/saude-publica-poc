@@ -11,6 +11,7 @@ ROUNDS="${ROUNDS:-3}"
 # Cenarios do plano-teste-estresse.md: design(A) load1000(B) ruptura(C) minimizacao(E)
 SCENARIOS="${SCENARIOS:-design load1000 minimizacao}"
 OUT="resultados/$(date +%Y%m%d-%H%M)"; mkdir -p "$OUT"
+echo "cenario,rodada,codigo_saida_k6" > "$OUT/execucoes.csv"
 E=(-e BASE_HOST="$BASE_HOST" -e KONG_PORT="$KONG_PORT")
 
 echo "==> Conectividade com http://$BASE_HOST:$KONG_PORT"
@@ -21,9 +22,19 @@ k6 run --quiet "${E[@]}" -e MAX_VUS=50 -e THRESHOLDS=poc load.js >/dev/null 2>&1
 
 run() { # $1=nome $2..=args k6
   local name="$1"; shift
+  local rc
   for r in $(seq 1 "$ROUNDS"); do
     echo "==> $name  rodada $r/$ROUNDS  ($(date +%H:%M:%S))"
+    # O k6 sai com codigo 99 quando um threshold nao e atingido. Com
+    # `set -e` + pipefail isso abortaria a bateria inteira no meio da
+    # execucao - e um threshold estourado E UM RESULTADO do experimento,
+    # nao um erro de execucao. Registramos o codigo e seguimos.
+    set +e
     k6 run "${E[@]}" "$@" --summary-export "$OUT/${name}_r${r}.json" | tee "$OUT/${name}_r${r}.log"
+    rc=${PIPESTATUS[0]}
+    set -e
+    echo "${name},${r},${rc}" >> "$OUT/execucoes.csv"
+    [ "$rc" -eq 0 ] || echo "    >> k6 codigo $rc (99 = threshold nao atingido). Registrado; a bateria continua."
     echo "    pausa 3 min (HPA volta ao minimo)"; sleep 180
   done
 }
