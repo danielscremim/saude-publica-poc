@@ -235,3 +235,71 @@ e forma de responder à banca em `plano-teste-estresse.md` §6.
 os registros de auditoria): pacientes `66c735a2-81cd-4b5c-b39b-2307e03dd7a2`,
 `d014cc5c-69ef-492e-b0f5-b75d9310fd97`, `4b3294b1-6abb-4143-b334-0ad47483a7d5`,
 `8d57cf71-ca61-4e8c-b0ca-26e7957ff97d`; execução em 19/09/2026, 05:38–05:39 UTC.
+
+---
+
+## 6. Ensaio de carga — cenário A, 1 rodada (19/09/2026, 14:05)
+
+> **Não é o resultado oficial.** Uma única rodada, executada para validar o
+> encadeamento VM-2 → Kong → malha antes do bloco experimental. Os números do
+> trabalho virão da bateria de 3 rodadas por cenário, reportada como média ±
+> desvio-padrão. Este registro existe porque o resultado é significativo por si e
+> serve de referência caso a bateria oficial divirja.
+
+**Configuração:** 150 usuários virtuais (`THRESHOLDS=design`), 2 min de rampa +
+5 min sustentados + 2 min de descida, gerados da VM-2 contra o Kong da VM-1.
+Latência de rede entre as VMs: RTT médio 0,218 ms, 0% de perda (20 pacotes).
+
+**Volume:** 233.428 requisições em 9 min · **432 req/s** sustentados ·
+233.424 iterações completas, **nenhuma interrompida** · 129 MB recebidos / 85 MB enviados.
+
+### 6.1 Requisitos não funcionais — limites de *projeto*, não de PoC
+
+| Métrica | Medido | Limite de design | RNF |
+|---|---|---|---|
+| `http_req_duration` p(95) | **37,85 ms** | 500 ms | RNF-01 |
+| `{endpoint:timeline}` p(95) | **52,59 ms** | 800 ms | RNF-05 |
+| `{endpoint:consent_check}` p(95) | **13,84 ms** | 20 ms | RNF-06 |
+| `http_req_failed` | **0,00%** (3 de 233.428) | < 1% | RNF-01 |
+
+Os quatro limites foram atingidos com margem — e são os valores de **projeto**, não
+os relaxados adotados para PoC em execuções anteriores.
+
+### 6.2 Comparação com a execução [3] e o que ela esclarece
+
+A execução [3] registrada no cabeçalho de `tests/k6/load.js` (k3s + Istio, 1000 VUs,
+acesso por `kubectl port-forward`) falhou em três dos quatro limites:
+
+| Threshold | Execução [3] | Ensaio atual | Limite |
+|---|---|---|---|
+| `http_req_duration` p(95) | 841 ms ✗ | 37,85 ms ✓ | 500 ms |
+| `consent_check` p(95) | 63,42 ms ✗ | 13,84 ms ✓ | 20 ms |
+| `timeline` p(95) | 840,22 ms ✗ | 52,59 ms ✓ | 800 ms |
+| `http_req_failed` | 0,00% ✓ | 0,00% ✓ | < 1% |
+
+A hipótese registrada à época — de que as falhas decorriam do **canal de medição** e
+não da arquitetura — fica confirmada. A separação do gerador de carga em uma segunda
+máquina, adotada por rigor metodológico, foi também a condição que tornou os RNFs de
+projeto verificáveis. **É um argumento de método para a Metodologia**, não apenas um
+detalhe de infraestrutura: instrumentação intrusiva pode dominar o fenômeno medido.
+
+> Ressalva de comparabilidade: a execução [3] usou 1000 VUs e este ensaio, 150. A
+> comparação vale para a ordem de grandeza do overhead do canal, não como medida
+> pareada. O cenário B da bateria oficial (1000 VUs) fornecerá a comparação direta.
+
+### 6.3 Observações para a análise
+
+- **`iteration_duration` p(95) = 493,91 ms não é latência.** Inclui o *think time*
+  aleatório de 0–500 ms embutido no `load.js`. A latência do sistema é o
+  `http_req_duration`. Evitar a troca ao redigir.
+- **Valores máximos discrepantes:** 2,94 s em `timeline` e 2,29 s em `consent_check`,
+  contra medianas de 18,82 ms e 5,66 ms. Compatível com aquecimento da JVM ou pausa de
+  coleta de lixo durante a rampa. Na bateria oficial, verificar no
+  `resultados-infra/*/pools.csv` se o instante do máximo coincide com pico de
+  `jvm_gc_pause_seconds_sum` ou com evento do HPA.
+- **Falhas:** 3 requisições em 233.428 (0,0013%) — 1 `consent` e 1 `patient` entre os
+  *checks*. Volume compatível com ruído de rampa; se reaparecer na bateria, investigar.
+- **Escalonamento:** com 150 VUs e infraestrutura folgada, espera-se pouco ou nenhum
+  acionamento do HPA. O escalonamento é objeto do cenário B.
+
+**Artefatos:** `tests/k6/resultados/20260919-1405/` na VM-2.
