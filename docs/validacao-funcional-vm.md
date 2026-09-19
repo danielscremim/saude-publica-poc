@@ -227,6 +227,10 @@ Resultados 4 e 5 do plano de teste estão demonstrados.
 a coleta de infraestrutura correspondente, a partir da VM-2. Alimentam os
 Resultados 1, 2 e 3.
 
+**Limitação já declarada para o experimento de carga:** a carga sintética concentra-se
+em um único paciente, o que torna os valores de latência um teto otimista. Justificativa
+e forma de responder à banca em `plano-teste-estresse.md` §6.
+
 **Identificadores desta execução** (para rastreabilidade, caso seja preciso reconsultar
 os registros de auditoria): pacientes `66c735a2-81cd-4b5c-b39b-2307e03dd7a2`,
 `d014cc5c-69ef-492e-b0f5-b75d9310fd97`, `4b3294b1-6abb-4143-b334-0ad47483a7d5`,

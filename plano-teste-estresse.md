@@ -85,6 +85,29 @@ A segunda é resultado de engenharia; a primeira é observação. O histórico d
 
 **Disco e rede.** Métricas do nó inteiro, não isoláveis por microsserviço, já que todos compartilham a mesma VM. Servem para identificar saturação e correlacionar com a degradação, não para atribuir consumo a um serviço.
 
+**Concentração da carga sintética.** O `setup()` dos scripts k6 cadastra **um único
+paciente** e todos os usuários virtuais leem esse mesmo `patientUuid`. Isso favorece o
+sistema sob teste em três pontos: a página do PostgreSQL que contém o registro
+permanece continuamente em *cache*; a verificação de consentimento incide sempre sobre
+a mesma chave; e a janela deslizante da detecção de anomalia percorre um índice já
+aquecido. Os valores absolutos de latência são, portanto, um **limite otimista** — em
+uma distribuição realista de acessos, com milhares de pacientes distintos, haveria mais
+leituras de disco e menor eficiência de *cache*.
+
+A escolha é deliberada e não invalida as conclusões, porque o objeto de medição é o
+**comportamento da arquitetura sob concorrência** — propagação assíncrona, reação do
+auto-scaling, saturação de pools, ponto de ruptura e recuperação — e não a capacidade
+absoluta de um banco de dados. Concentrar a carga em um paciente isola justamente essas
+propriedades, removendo a variabilidade de acesso a disco como fator de confusão. Além
+disso, preserva a comparabilidade com as execuções [2] e [3] registradas no cabeçalho de
+`tests/k6/load.js`, que usaram o mesmo desenho.
+
+**Como responder à banca:** a medida é um teto otimista de latência e um piso
+conservador de saturação de I/O; a escala de pods, o comportamento do HPA, o *lag* do
+Kafka e o ponto de ruptura por CPU permanecem válidos, pois nenhum deles depende da
+cardinalidade de pacientes. A extensão natural — parametrizar N pacientes distintos — é
+registrada como trabalho futuro.
+
 **Generalização.** Os números valem para esta configuração de hardware. A contribuição é **arquitetural e metodológica** — comportamento sob carga, pontos de saturação e resposta dos mecanismos de resiliência — não uma promessa de capacidade absoluta em produção.
 
 ---
