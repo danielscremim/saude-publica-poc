@@ -61,6 +61,9 @@ sidecar Envoy e mTLS — não uma consulta direta ao banco.
 
 Mediana geral: 313,67 / 269,14 / 275,95 ms.
 
+**Vazão sustentada:** 1.238,9 / 1.377,1 / 1.358,6 req/s — **1.324,9 ± 75,0 req/s**.
+No cenário A: 428,7 / 433,6 / 422,0 — **428,1 ± 5,8 req/s**.
+
 **Leitura.** Sob 1000 usuários virtuais simultâneos a plataforma sustentou a carga
 com **zero erros nas três rodadas** — nenhuma requisição perdida em centenas de
 milhares. A latência, porém, ficou acima do alvo de projeto: P95 de 818 ms contra
@@ -174,9 +177,15 @@ reforça que o comportamento decorre do desenho, não da infraestrutura.
 Os demais seis serviços mantiveram 2 réplicas — CPU abaixo do gatilho. Ao final,
 todos retornaram a 2 réplicas: o ciclo de subida e descida está documentado.
 
-> **A extrair do `hpa.csv`:** o instante em que cada serviço atingiu 10 réplicas pela
-> primeira vez, para calcular o **tempo de reação do HPA** desde o início da rampa.
-> Comando: `awk -F, '$3==10' hpa.csv | head`.
+**Tempo de reação do HPA** (extraído do `hpa.csv`): `consent-service` e
+`patient-service` saíram de 2 réplicas às 15:31:11 e 15:31:22 e atingiram as 10 às
+15:33:12 — **cerca de 2 minutos do primeiro escalonamento até o máximo**, limitado
+pela política padrão de subida do HPA (duplicar a cada 15 s, ou +4 pods, o que for
+maior). O `history-service` foi o primeiro a reagir, ainda no aquecimento.
+
+> Observação: o escalonamento ao máximo ocorreu já durante o **cenário A (150 VUs,
+> 428 req/s)**, e não apenas sob 1000 VUs. O gatilho de 70% de CPU com apenas 2
+> réplicas iniciais é atingido com folga nessa carga.
 
 ### 4.2 Auto-recuperação sob falha real
 
@@ -402,6 +411,18 @@ réplicas no mínimo, JVMs recém-iniciadas).
 
 Rodadas individuais (P95 geral / vazão): 1,14 s / 1.158 req/s · 832 ms / 1.240 req/s
 · 781 ms / 1.278 req/s. **Todas com 0,00% de erro e código de saída 0.**
+
+> **Precisão necessária:** a coluna `maxReplicas=10` refere-se à execução de
+> 20/09 00:17. A bateria de 19/09 **também** rodava com `maxReplicas=10` e teve bom
+> desempenho — 1.324,9 ± 75,0 req/s e P95 de 818 ms. A diferença não está no valor
+> configurado, e sim em **quantos pods de fato chegaram a rodar**: 43 em 19/09
+> (contidos pelo limite de `inotify`, §6.1) contra 57 em 20/09.
+>
+> Ou seja: as duas configurações saudáveis — 19/09 com 43 pods ativos e a de
+> `maxReplicas=6` com 45 — têm desempenho equivalente (1.325 contra 1.225 req/s;
+> 818 contra 918 ms). A configuração degradada é a de 57 pods. **O que determina o
+> resultado é o número de pods ativos em relação à capacidade do nó, não o valor
+> nominal de `maxReplicas`** — que é apenas o meio de controlá-lo.
 
 ### 8.4 A leitura que importa
 
