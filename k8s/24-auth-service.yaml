@@ -30,7 +30,15 @@ spec:
         - name: auth-service
           image: saude-publica-poc-auth-service:latest
           imagePullPolicy: IfNotPresent
-          ports: [{ containerPort: 8085 }]
+          ports:
+            - { containerPort: 8085, name: http }
+            # Porta do pilot-agent do Istio, que publica as metricas do Envoy
+            # JUNTO com o /actuator/prometheus da aplicacao (enablePrometheusMerge).
+            # Precisa estar DECLARADA: o PodMonitor filtra por
+            # __meta_kubernetes_pod_container_port_number, que so existe para
+            # portas declaradas - sem isso o alvo e descartado em silencio.
+            # containerPort e informativo; quem atende a 15020 e o sidecar.
+            - { containerPort: 15020, name: istio-merged }
           env:
             - { name: SPRING_DATASOURCE_URL, value: "jdbc:postgresql://postgres:5432/authdb" }
             - name: SPRING_DATASOURCE_USERNAME
