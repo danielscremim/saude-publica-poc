@@ -50,9 +50,21 @@ kubectl -n "$NS" rollout restart deploy >/dev/null
 kubectl -n "$NS" rollout status deploy --timeout=600s
 
 echo "==> 4/4 Verificacao"
-NOK=$(kubectl -n "$NS" get pods --no-headers | grep -vc "2/2 *Running" || true)
-# kafka-0 e postgres-0 sao StatefulSet; kafka nao tem sidecar (1/1).
-echo "    pods fora de 2/2 Running: $NOK  (esperado: 1, o kafka-0)"
+# O `rollout status` retorna quando as replicas NOVAS estao prontas, mas as
+# antigas ainda podem estar em Terminating. Comecar a rodada nesse instante
+# significaria medir com pods a mais no no. Esperamos o estado assentar.
+# Esperado ao final: apenas o kafka-0 fora do padrao 2/2 (nao tem sidecar).
+for _ in $(seq 1 60); do
+  NOK=$(kubectl -n "$NS" get pods --no-headers 2>/dev/null | grep -vc "2/2 *Running" || true)
+  [ "$NOK" -le 1 ] && break
+  sleep 5
+done
+if [ "$NOK" -gt 1 ]; then
+  echo "    AVISO: $NOK pods fora de 2/2 Running apos 5 min:"
+  kubectl -n "$NS" get pods --no-headers | grep -v "2/2 *Running" | sed 's/^/      /'
+else
+  echo "    pods fora de 2/2 Running: $NOK (o kafka-0) - ok"
+fi
 kubectl top nodes 2>/dev/null | tail -1
 
 # O HPA leva ate 15 s para publicar as metricas dos pods novos; sem essa espera
