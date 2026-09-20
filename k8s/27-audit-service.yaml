@@ -63,7 +63,12 @@ metadata:
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: audit-service }
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 6     # MEDIDO, nao arbitrado. Ver docs/resultados-bateria-carga.md §8:
+                     # com maxReplicas=10 neste no de 32 vCPUs o P95 foi de 38,3 s
+                     # com 22,8% de erro; com 6, caiu para 918 ms com 0,00% de erro
+                     # e 9,4x mais vazao. Cada replica traz uma JVM e um sidecar
+                     # Envoy: acima da capacidade do no, escalar DEGRADA.
+                     # Em cluster com mais nos este valor deve ser recalculado.
   metrics:
     - type: Resource
       resource:

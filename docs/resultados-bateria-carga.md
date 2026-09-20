@@ -452,3 +452,122 @@ Com 32 vCPUs e ~45 pods ativos como teto observado, `maxReplicas=6` nos dez serv
 é o dimensionamento que este nó comporta. Em um cluster com mais nós — ou com
 *Cluster Autoscaler* — o valor seria outro, e é isso que a limitação de nó único
 declarada em `plano-teste-estresse.md` §6 antecipava.
+
+---
+
+## 9. Por que o alvo de projeto não é atingido — e o que pode ser otimizado
+
+> Seção escrita para responder diretamente à pergunta de banca: *"o P95 ficou em
+> 918 ms com alvo de 500 ms, e a linha do tempo em 1.144 ms com alvo de 800 ms.
+> Por quê? É limitação da arquitetura?"*
+
+### 9.1 A evidência diz que não é um ponto específico — é contenção
+
+Comparando os dois cenários, com a mesma arquitetura e o mesmo código:
+
+| Métrica | Cenário A (150 VUs) | Cenário B (1000 VUs) | Fator |
+|---|---|---|---|
+| `http_req_duration` p95 | **48 ms** ✓ | 918 ms | 19× |
+| `{endpoint:timeline}` p95 | **68 ms** ✓ | 1.144 ms | 17× |
+| `{endpoint:consent_check}` p95 | **18 ms** ✓ | 467 ms | 26× |
+| CPU do nó no pico | baixa | **94%** | — |
+
+**Com 150 usuários virtuais, os três alvos de projeto são atendidos** — inclusive os
+20 ms do consentimento inline. O que muda entre um cenário e outro não é o código:
+é a utilização do nó.
+
+E os três endpoints degradam por **fatores semelhantes** (17× a 26×). Essa uniformidade
+é a assinatura de disputa por um **recurso compartilhado**. Se a causa fosse uma
+consulta ineficiente ou um índice ausente, **um** endpoint degradaria
+desproporcionalmente aos outros — não todos na mesma proporção.
+
+A teoria de filas prevê que o tempo de resposta cresce com 1/(1−ρ). Com ρ = 0,94, o
+multiplicador esperado é ≈ 16,7×. O observado foi de 17× a 26×. **A degradação é
+explicada pela saturação do nó, não por um defeito de desenho.**
+
+### 9.2 Três oportunidades reais de otimização, verificadas no código
+
+Dito isso, há ganhos concretos possíveis — e é honesto reconhecê-los.
+
+#### (a) O leque de chamadas do BFF é **sequencial**
+
+`TimelineService.getPatientView()` executa três chamadas HTTP **em série**:
+
+```java
+ConsentCheckDto consent = consentClient.check(...);      // 1 - obrigatória primeiro
+PatientDto patient      = patientClient.findByUuid(...); // 2 ─┐ independentes
+List<ResultDto> results = resultClient.findByPatient(...);// 3 ─┘ entre si
+```
+
+A verificação de consentimento **precisa** vir primeiro: é ela que autoriza o acesso,
+e executar as outras antes violaria o princípio de negar por padrão. Mas as chamadas
+2 e 3 são independentes entre si e hoje somam quando poderiam se sobrepor.
+
+Ganho esperado: a latência da etapa de agregação deixa de ser `patient + result` e
+passa a ser `max(patient, result)`.
+
+#### (b) Não há cache de consentimento — e a invalidação **já está desenhada**
+
+Não existe `@Cacheable` nem qualquer camada de cache no `history-service` ou no
+`consent-service`. A verificação vai ao banco a cada requisição.
+
+O consentimento responde por **467 ms dos 1.144 ms** da linha do tempo — cerca de
+**41% da latência**.
+
+O ponto importante para a defesa: **o alvo de 20 ms sempre pressupôs esse cache.** O
+comentário em `tests/k6/lib/config.js`, escrito antes de qualquer medição, diz
+literalmente: *"RNF-06 consent: p(95) ≤ 20ms ... design produção: 20ms com cache
+dedicado"*. Não se trata de não atingir uma meta — trata-se de uma meta definida para
+um desenho que inclui um componente que a PoC não implementou.
+
+E a peça que torna esse cache seguro **já existe**: o tópico `consent.revoked` é
+publicado pelo `consent-service` a cada revogação e **não tem nenhum consumidor**. Ele
+foi criado exatamente para invalidação de cache — está assim em `CLAUDE.md` §5:
+*"consumidores: [futuro] serviços de dados p/ invalidar cache"*. A arquitetura
+antecipou a otimização; a implementação ficou como evolução.
+
+Isso preserva o RNF-06: a revogação continua propagando em ≤ 1 s via Kafka, porque a
+invalidação é dirigida por evento, não por expiração de TTL.
+
+#### (c) Cada chamada atravessa dois sidecars
+
+Com mTLS STRICT, uma chamada de A para B passa pelo Envoy de saída de A e pelo Envoy
+de entrada de B. As três chamadas sequenciais da linha do tempo somam **seis
+travessias de proxy** por requisição, além dos saltos de rede.
+
+É o preço da malha — e ele compra mTLS, observabilidade e política. O modo *ambient*
+do Istio (sem sidecar por pod) reduziria esse custo, mas altera o modelo de segurança
+e está fora do escopo deste trabalho. Vale como trabalho futuro declarado.
+
+### 9.3 O que **não** é a causa
+
+Verificado, para não atribuir a latência ao lugar errado:
+
+- **A publicação de auditoria não bloqueia.** `AuditPublisher` usa
+  `kafkaTemplate.send(...)` sem `.get()` — é assíncrona e não entra no caminho crítico
+  da resposta.
+- **Não é volume de dados.** No cenário B o banco parte **vazio** (reset antes de cada
+  rodada) e o `consent_check` opera sobre dezenas de linhas.
+- **Não é o Kafka.** Todos os consumidores exceto o `audit-service` mantiveram lag
+  zero, e a publicação é assíncrona.
+- **Não é falta de índice.** O `audit_log` tem `idx_audit_patient_ts`; e um índice
+  ausente degradaria um endpoint, não todos na mesma proporção (§9.1).
+
+### 9.4 Resposta curta para a banca
+
+> Os alvos de projeto são atendidos com 150 usuários simultâneos — P95 de 48 ms
+> contra 500 ms, e consentimento inline em 18 ms contra 20 ms. Com 1000 usuários, o
+> nó único chega a 94% de CPU e a latência cresce por saturação, não por defeito de
+> desenho: os três endpoints degradam por fatores semelhantes, o que caracteriza
+> disputa por recurso compartilhado, e o valor observado é compatível com o previsto
+> pela teoria de filas para essa utilização.
+>
+> Há duas otimizações identificadas e não implementadas: paralelizar as duas chamadas
+> independentes do agregador, e adicionar cache de consentimento — cuja invalidação
+> por evento já está prevista na arquitetura pelo tópico `consent.revoked`, hoje sem
+> consumidor. O alvo de 20 ms para o consentimento, aliás, sempre pressupôs esse
+> cache, conforme registrado no projeto antes das medições.
+>
+> A terceira via é de infraestrutura: a arquitetura escala horizontalmente, mas um
+> nó único não oferece para onde escalar. Essa limitação está declarada na
+> Metodologia desde o início do experimento.
