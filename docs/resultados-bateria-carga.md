@@ -728,10 +728,10 @@ A eliminação deliberada dispara o mesmo caminho de um crash — o ReplicaSet r
 
 ### 11.2 Resultado
 
-| Execução | t1 (substituto criado) | t2 (pronto) | **MTTR** | Erro ao cliente |
-|---|---|---|---|---|
-| 07:57:26 | **+2 s** | +42 s | **42 s** | **0,00%** |
-| 08:19:22 | **+0 s** | +43 s | **43 s** | **0,00%** |
+| Execução | t1 (substituto criado) | t2 (pronto) | **MTTR** | P95 na janela | Erro ao cliente |
+|---|---|---|---|---|---|
+| 07:57:26 | **+2 s** | +42 s | **42 s** | 931 ms | **0,00%** |
+| 08:19:22 | **+0 s** | +43 s | **43 s** | 1.170 ms | **0,01%** (66 de 609.846) |
 
 O RNF-02 estabelece auto-recuperação em até 30 s. **O alvo não foi atingido**, e a
 decomposição mostra por quê.
@@ -777,13 +777,20 @@ Há dois tempos, e confundi-los seria erro de interpretação:
 
 **Tempo de reposição da réplica: 43 s.** Acima do alvo de 30 s.
 
-**Indisponibilidade percebida pelo cliente: zero.** Em ambas as execuções o
-`http_req_failed` foi **0,00%**, com P95 de 931 ms durante toda a janela. As réplicas
-remanescentes absorveram a carga sem nenhuma requisição perdida.
+**Indisponibilidade percebida pelo cliente: praticamente nula.** Na primeira
+execução o `http_req_failed` foi **0,00%**; na segunda, **0,01%** — **66 requisições
+em 609.846**, com P95 de 1.170 ms durante a janela.
 
-O que ficou degradado por 43 s foi a **redundância**, não a **disponibilidade**. Um
-requisito de disponibilidade de 99,9% (RNF-02) não é violado por isso: nenhuma
-requisição falhou.
+Esse segundo número é o mais informativo dos dois, porque **quantifica** o impacto em
+vez de apenas dizer que não houve. Confrontado com o próprio requisito:
+
+```
+RNF-02 exige disponibilidade >= 99,9%  ->  tolera ate 0,100% de falha
+medido durante a falha provocada       ->             0,011%
+```
+
+O impacto observado é **uma ordem de grandeza menor** que o tolerado. O que ficou
+degradado por 43 s foi a **redundância**, não a **disponibilidade**.
 
 ### 11.6 Como atingir o alvo de 30 s — caminhos reais
 
@@ -799,6 +806,8 @@ O limite é o arranque da JVM, e há três saídas conhecidas, nenhuma implement
 
 **Conclusão honesta para a defesa:** *o alvo de 30 s do RNF-02 não é alcançável por
 um serviço em JVM neste substrato, porque a JVM sozinha consome 28 s do orçamento. O
-orquestrador cumpre sua parte em menos de dois segundos. A disponibilidade percebida,
-no entanto, não foi afetada — o que sugere que o requisito deveria ser formulado em
-termos de erro percebido pelo cliente, e não de tempo de reposição de réplica.*
+orquestrador cumpre sua parte em menos de dois segundos. A disponibilidade, contudo,
+permaneceu dentro do exigido pelo próprio requisito: 0,011% de falha contra os 0,100%
+tolerados por uma meta de 99,9%. Isso sugere que o requisito é contraditório consigo
+mesmo — mede tempo de reposição de réplica quando o que declara proteger é
+disponibilidade, e as duas coisas divergem quando há redundância suficiente.*
