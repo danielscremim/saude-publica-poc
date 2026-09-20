@@ -688,3 +688,96 @@ Isso transforma o resultado em recomendação verificável: *o ponto de ruptura 
 plataforma é determinado pelo dimensionamento do pool de conexões, e há margem
 documentada para elevá-lo*. Fica como trabalho futuro mensurável — e como resposta
 pronta caso a banca pergunte se o limite encontrado é intrínseco. **Não é.**
+
+---
+
+## 11. Cenário D — Resiliência provocada (20/09/2026)
+
+> Fecha o **Resultado 3**. Duas execuções independentes, com `kubectl delete pod`
+> sobre uma réplica `2/2 Running` do `history-service` no meio de carga de 1000 VUs.
+
+### 11.1 Por que provocar, se já houve falha espontânea
+
+Na bateria de 19/09 dois pods reiniciaram sozinhos e o erro ao cliente foi 0,00%
+(§4.2). Isso prova que a auto-recuperação funciona, mas **não permite medir**: sem
+instante datado não há como calcular tempo de reposição nem isolar a janela de erro.
+
+A eliminação deliberada dispara o mesmo caminho de um crash — o ReplicaSet reconcilia
+— de forma determinística e cronometrada.
+
+### 11.2 Resultado
+
+| Execução | t1 (substituto criado) | t2 (pronto) | **MTTR** | Erro ao cliente |
+|---|---|---|---|---|
+| 07:57:26 | **+2 s** | +42 s | **42 s** | **0,00%** |
+| 08:19:22 | **+0 s** | +43 s | **43 s** | **0,00%** |
+
+O RNF-02 estabelece auto-recuperação em até 30 s. **O alvo não foi atingido**, e a
+decomposição mostra por quê.
+
+### 11.3 Onde estão os 43 segundos
+
+O log do Spring Boot do pod substituto permite decompor o tempo:
+
+| Fase | Duração | Evidência |
+|---|---|---|
+| Kubernetes detecta e cria o substituto | **0–2 s** | `t1` registrado pelo script |
+| Agendamento + inicialização do sidecar Istio | ~9 s | intervalo até o primeiro log da aplicação |
+| **Arranque da JVM (Spring Boot)** | **28,5 s** | `Started HistoryServiceApplication in 28.458 seconds` |
+| Confirmação pela sonda de prontidão | ~3 s | `periodSeconds: 5` |
+| **Total** | **~43 s** | |
+
+**Dois terços do tempo de reposição são arranque da JVM.** O orquestrador reagiu em
+menos de dois segundos.
+
+O efeito da contenção é mensurável: sem carga, serviços da mesma base sobem em
+**~20 s** (`Started AuthServiceApplication in 19.805 seconds`); sob 1000 usuários
+virtuais, o `history-service` levou **28,5 s** — a JVM nova disputa CPU com o sistema
+em regime.
+
+### 11.4 Uma hipótese testada e refutada
+
+A primeira medição (42 s) sugeriu que a causa fosse a `readinessProbe`, configurada
+com `initialDelaySeconds: 30` e `periodSeconds: 10` — o que impõe, em tese, um piso
+de 30 a 40 s antes da primeira verificação.
+
+A hipótese foi testada substituindo essa configuração por `startupProbe` com
+`periodSeconds: 5`, que remove o atraso inicial. **O MTTR passou de 42 s para 43 s —
+ou seja, não mudou.** A restrição real era o arranque da JVM, que por coincidência
+tem duração próxima ao atraso configurado.
+
+A alteração foi **mantida**, porque é tecnicamente correta — remove um piso
+artificial e faz a medição refletir a restrição verdadeira — mas não se atribui a ela
+nenhum ganho.
+
+### 11.5 A distinção que importa para o RNF-02
+
+Há dois tempos, e confundi-los seria erro de interpretação:
+
+**Tempo de reposição da réplica: 43 s.** Acima do alvo de 30 s.
+
+**Indisponibilidade percebida pelo cliente: zero.** Em ambas as execuções o
+`http_req_failed` foi **0,00%**, com P95 de 931 ms durante toda a janela. As réplicas
+remanescentes absorveram a carga sem nenhuma requisição perdida.
+
+O que ficou degradado por 43 s foi a **redundância**, não a **disponibilidade**. Um
+requisito de disponibilidade de 99,9% (RNF-02) não é violado por isso: nenhuma
+requisição falhou.
+
+### 11.6 Como atingir o alvo de 30 s — caminhos reais
+
+O limite é o arranque da JVM, e há três saídas conhecidas, nenhuma implementada aqui:
+
+1. **Imagem nativa (GraalVM / Spring AOT)** — arranque em dezenas de milissegundos
+   em vez de dezenas de segundos. É a solução direta, ao custo de restrições de
+   reflexão e de um processo de compilação mais longo.
+2. **CRaC (*Coordinated Restore at Checkpoint*)** — restaura a JVM a partir de um
+   instantâneo já aquecido, eliminando também o problema de desempenho a frio (§4.6).
+3. **Réplicas de reserva** — sobreprovisionar para que a perda de uma não exija
+   reposição imediata. Troca tempo de recuperação por custo permanente de recursos.
+
+**Conclusão honesta para a defesa:** *o alvo de 30 s do RNF-02 não é alcançável por
+um serviço em JVM neste substrato, porque a JVM sozinha consome 28 s do orçamento. O
+orquestrador cumpre sua parte em menos de dois segundos. A disponibilidade percebida,
+no entanto, não foi afetada — o que sugere que o requisito deveria ser formulado em
+termos de erro percebido pelo cliente, e não de tempo de reposição de réplica.*
