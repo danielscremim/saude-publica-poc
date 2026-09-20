@@ -228,8 +228,34 @@ números errados. Medir errado sem falhar visivelmente é pior que falhar.
 | `coletar-metricas.sh` lia `containerStatuses[0]` | Reportava "0 reinícios" lendo só o sidecar, enquanto a aplicação acusava 5 |
 | `ponto-ruptura.js` alocava 4000 VUs | A VM-2 tem 15 GB **sem swap**; a 1–5 MB por VU, OOM no meio da medição |
 | `setup-vm2-loadgen.sh` usava `grep -q nofile` | Casava com as linhas **comentadas** do `limits.conf` e pulava o ajuste; 1000 VUs falhariam por descritores |
-| Processo k6 órfão vivo há 9h26 | Descoberto durante uma execução. Verificado: **0 ticks de CPU**, não gerava carga, não contaminou medição — mas só foi possível afirmar isso porque foi medido |
+| Processo k6 órfão vivo há 9h26, com processo pai vivo há 10h36 | Contaminação silenciosa de todas as medições do período — ver detalhamento abaixo |
 | `reset-ambiente.sh` não esperava os pods antigos | O `rollout status` retorna com as réplicas antigas ainda em `Terminating`; a rodada começaria com pods a mais |
+
+### Processos órfãos de carga — risco que quase passou despercebido
+
+Durante uma execução, ao inspecionar a VM-2 encontrei **dois processos k6 ativos ao
+mesmo tempo**: a rodada corrente e um `k6 run ... MAX_VUS=50` iniciado **9 h 26 min
+antes**. Era o aquecimento de uma bateria anterior, que nunca terminou.
+
+Se ele estivesse gerando carga, todas as medições feitas naquele intervalo estariam
+contaminadas por 50 usuários virtuais não contabilizados. **Só foi possível afirmar
+que não estavam porque o consumo foi medido antes de matá-lo:** 0 ticks de CPU em
+5 segundos de amostragem, 64 MB residentes — processo travado, não ativo.
+
+Pior: ele tinha um **processo pai** — o `run-2vm.sh` daquela bateria, vivo havia
+10 h 36 min, bloqueado esperando o filho. Ao matar apenas o filho, liberei o pai para
+prosseguir: ele dispararia as rodadas seguintes sozinho, a qualquer momento,
+sobrepondo carga a um experimento em andamento. Foi eliminada a árvore inteira.
+
+**Lição operacional, aplicável a qualquer experimento de carga:** antes de cada
+medição, verificar que não há gerador de carga residual — e, ao encerrar um processo
+travado, encerrar a **árvore**, nunca só a folha. Um `pgrep` antes de começar custa
+dois segundos e protege horas de medição.
+
+> Armadilha correlata, no ferramental: um `pkill -f "run-2vm.sh"` executado por SSH
+> derrubou a própria conexão. O padrão casa com a linha de comando do shell remoto
+> que o executa — autoeliminação. Padrões de `pkill` precisam ser escritos de forma
+> a não casar consigo mesmos.
 
 **Validação do instrumento de contagem:** a série temporal de linhas usa
 `n_live_tup` (estimativa), e não `COUNT(*)`, para não perturbar o experimento. A
