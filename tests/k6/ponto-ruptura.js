@@ -20,8 +20,12 @@
 //   k6 run -e BASE_HOST=<IP_VM1> -e KONG_PORT=8000 \
 //          --out csv=ruptura.csv --summary-export ruptura.json ponto-ruptura.js
 //
-//   Ajustes:  -e START_RPS=200 -e STEP_RPS=200 -e MAX_RPS=2000 -e STEP_DURATION=2m
+//   Ajustes:  -e START_RPS=200 -e STEP_RPS=200 -e MAX_RPS=2000 -e STEP_SECONDS=120
 //             -e ABORT=false          (percorre todos os degraus sem parar na ruptura)
+//             -e MAX_VUS_CAP=1500     (teto de VUs; limitado pela RAM da VM-2)
+//
+// ANTES DE RODAR: acompanhe a memoria da VM-2 com `free -g`. A VM nao tem swap;
+// se o k6 for morto por OOM a rodada e perdida sem resultado aproveitavel.
 //
 // LEITURA DO RESULTADO: o JSON traz submetricas http_req_duration{degrau:N}.
 // O maior N com P95 dentro do limite e taxa de erro < 1% e a capacidade sustentada.
@@ -38,6 +42,8 @@ const STEP_RPS       = parseInt(__ENV.STEP_RPS || '200');
 const MAX_RPS        = parseInt(__ENV.MAX_RPS || '2000');
 const STEP_SECONDS   = parseInt(__ENV.STEP_SECONDS || '120');
 const ABORT          = (__ENV.ABORT || 'true') !== 'false';
+// Teto de VUs simultaneos. Ver justificativa no bloco `scenarios` abaixo.
+const MAX_VUS_CAP    = parseInt(__ENV.MAX_VUS_CAP || '1500');
 
 // Degraus: START_RPS, +STEP_RPS ... ate MAX_RPS. Cada degrau tem uma rampa curta
 // (10s) e um patamar de STEP_SECONDS, para o sistema estabilizar antes de medir.
@@ -72,10 +78,17 @@ export const options = {
       executor: 'ramping-arrival-rate',
       startRate: START_RPS,
       timeUnit: '1s',
-      // VUs suficientes para sustentar a taxa mesmo quando a latencia sobe:
-      // com P95 de 2 s, sustentar MAX_RPS exige ~MAX_RPS*2 VUs em voo.
+      // TETO DE VUs — restricao de MEMORIA da VM-2, nao de desenho.
+      // O k6 consome de 1 a 5 MB por VU. A VM-2 tem 15 GB e NAO tem swap
+      // (conforme a entrega da infraestrutura): alocar MAX_RPS*2 = 4000 VUs
+      // pediria entre 4 e 20 GB e arriscaria um OOM no meio da medicao, o que
+      // destruiria a rodada inteira.
+      // O teto e conservador de proposito. Se ele for baixo demais para a taxa
+      // alvo, o k6 acusa `dropped_iterations` > 0 - que ja e, por definicao, o
+      // criterio de "o gerador nao sustentou a taxa" do plano (secao 4). Ou
+      // seja: falha de forma visivel e interpretavel, em vez de travar a VM.
       preAllocatedVUs: Math.min(500, MAX_RPS),
-      maxVUs: Math.max(1000, MAX_RPS * 2),
+      maxVUs: MAX_VUS_CAP,
       stages,
     },
   },
