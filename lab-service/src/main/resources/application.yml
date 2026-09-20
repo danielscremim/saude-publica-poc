@@ -1,5 +1,12 @@
 server:
   port: 8083
+  tomcat:
+    mbeanregistry:
+      # RNF-04: sem isto o Spring Boot nao registra os MBeans do Tomcat e o
+      # binder do Micrometer nao publica tomcat_threads_busy_threads - a
+      # metrica fica ausente sem nenhum erro. E o dado que mostra se a
+      # saturacao foi de threads ou de conexoes de banco.
+      enabled: true
 
 spring:
   application:
