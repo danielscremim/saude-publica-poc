@@ -34,6 +34,7 @@
 import http from 'k6/http';
 import { check, group } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
+import exec from 'k6/execution';
 import { URLS, DEFAULT_HEADERS } from './lib/config.js';
 import { setupBaseline } from './lib/setup.js';
 
@@ -44,13 +45,22 @@ const STEP_SECONDS   = parseInt(__ENV.STEP_SECONDS || '120');
 const ABORT          = (__ENV.ABORT || 'true') !== 'false';
 // Teto de VUs simultaneos. Ver justificativa no bloco `scenarios` abaixo.
 const MAX_VUS_CAP    = parseInt(__ENV.MAX_VUS_CAP || '1500');
+// AQUECIMENTO - descoberto na primeira execucao (20/09, 05:03). O executor
+// ramping-arrival-rate parte da taxa inicial INSTANTANEAMENTE, sem rampa. Logo
+// apos um reset do ambiente as JVMs estao frias (sem JIT compilado, pools
+// vazios) e 200 req/s de uma vez produziram P95 de 4.692 ms com ERRO ZERO e o
+// no a 3% de CPU - transiente de aquecimento, nao saturacao. O teste abortou em
+// 31 s por threshold, sem medir nada.
+// A rampa abaixo absorve esse transiente, e as requisicoes dela sao marcadas
+// com fase:aquecimento para ficarem FORA das metricas de medicao.
+const WARMUP_SECONDS = parseInt(__ENV.WARMUP_SECONDS || '90');
 
 // Degraus: START_RPS, +STEP_RPS ... ate MAX_RPS. Cada degrau tem uma rampa curta
 // (10s) e um patamar de STEP_SECONDS, para o sistema estabilizar antes de medir.
 const DEGRAUS = [];
 for (let rps = START_RPS; rps <= MAX_RPS; rps += STEP_RPS) DEGRAUS.push(rps);
 
-const stages = [];
+const stages = [{ target: START_RPS, duration: `${WARMUP_SECONDS}s` }];  // aquecimento
 for (const rps of DEGRAUS) {
   stages.push({ target: rps, duration: '10s' });
   stages.push({ target: rps, duration: `${STEP_SECONDS}s` });
@@ -62,10 +72,14 @@ const errosPorDegrau = new Counter('erros_por_degrau');
 // Threshold "sempre verdadeiro" por degrau: serve para materializar as
 // submetricas http_req_duration{degrau:N} no --summary-export. Sem isso o k6
 // nao quebra a metrica por tag no resumo final.
+// Os thresholds que abortam incidem sobre {fase:medicao}, NAO sobre a metrica
+// global: incluir o aquecimento contaminaria o p95 acumulado e abortaria o teste
+// por causa do transiente de JVM fria. O delayAbortEval cobre todo o aquecimento.
+const ABORT_APOS = `${WARMUP_SECONDS + 30}s`;
 const thresholds = {
-  'dropped_iterations': ['count<1'],
-  'http_req_failed':    [{ threshold: 'rate<0.01',      abortOnFail: ABORT, delayAbortEval: '30s' }],
-  'http_req_duration':  [{ threshold: 'p(95)<2000',     abortOnFail: ABORT, delayAbortEval: '30s' }],
+  'dropped_iterations': ['count<1'],   // criterio de ruptura; nao aborta sozinho
+  'http_req_failed{fase:medicao}':   [{ threshold: 'rate<0.01',  abortOnFail: ABORT, delayAbortEval: ABORT_APOS }],
+  'http_req_duration{fase:medicao}': [{ threshold: 'p(95)<2000', abortOnFail: ABORT, delayAbortEval: ABORT_APOS }],
 };
 DEGRAUS.forEach((rps, i) => {
   thresholds[`http_req_duration{degrau:${i}}`] = ['p(95)>=0'];
@@ -87,7 +101,7 @@ export const options = {
       // alvo, o k6 acusa `dropped_iterations` > 0 - que ja e, por definicao, o
       // criterio de "o gerador nao sustentou a taxa" do plano (secao 4). Ou
       // seja: falha de forma visivel e interpretavel, em vez de travar a VM.
-      preAllocatedVUs: Math.min(500, MAX_RPS),
+      preAllocatedVUs: Math.min(800, MAX_RPS),   // 500 gerou 110 dropped_iterations no arranque
       maxVUs: MAX_VUS_CAP,
       stages,
     },
@@ -102,17 +116,21 @@ export function setup() {
   return { ...base, inicio: Date.now() };
 }
 
-// Deduz o degrau atual pelo tempo decorrido - o k6 nao expoe o stage corrente.
-function degrauAtual(inicio) {
-  const s = (Date.now() - inicio) / 1000;
+// Deduz fase e degrau pelo tempo decorrido - o k6 nao expoe o stage corrente.
+// Usa o relogio do proprio k6 (currentTestRunDuration) e nao Date.now() menos o
+// inicio do setup: o setup faz chamadas HTTP e sua duracao deslocaria a conta.
+function faseAtual() {
+  const s = exec.instance.currentTestRunDuration / 1000;
+  if (s < WARMUP_SECONDS) return { fase: 'aquecimento' };
+  const t = s - WARMUP_SECONDS;
   const porDegrau = STEP_SECONDS + 10;
-  return Math.min(Math.floor(s / porDegrau), DEGRAUS.length - 1);
+  const i = Math.min(Math.floor(t / porDegrau), DEGRAUS.length - 1);
+  return { fase: 'medicao', degrau: String(i) };
 }
 
 export default function (data) {
-  const i = degrauAtual(data.inicio);
-  const tags = { degrau: String(i) };
-  degrauRps.add(DEGRAUS[i], tags);
+  const tags = faseAtual();
+  if (tags.degrau !== undefined) degrauRps.add(DEGRAUS[Number(tags.degrau)], tags);
 
   const auth = { ...DEFAULT_HEADERS, Authorization: `Bearer ${data.token}` };
 
