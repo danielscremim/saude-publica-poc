@@ -362,3 +362,93 @@ exata ao final foi de **0,012%** (605.503 vs 605.430) e **0,003%** (3.399.017 vs
 
 **Artefatos:** `tests/k6/resultados/20260919-1519/` (VM-2) e
 `tests/k6/resultados-infra/20260919-1516/` (VM-1).
+
+---
+
+## 8. O dimensionamento do autoescalador — experimento controlado (20/09/2026)
+
+> Acrescentado após a §7. Este é o resultado mais contraintuitivo do trabalho e
+> fecha a discussão do Resultado 1 e do Resultado 3.
+
+### 8.1 A pergunta
+
+A repetição do cenário B com o ambiente saneado (`inotify` corrigido, base zerada,
+réplicas no mínimo, JVMs novas) **colapsou**: P95 de 38,3 s e 22,8% de erro, contra
+818 ms e 0,00% na execução anterior. A investigação isolou a causa em **saturação de
+CPU do nó** — 31 dos 32 vCPUs — e mostrou que a diferença entre as duas execuções era
+o número de pods que de fato rodavam: **43 contra 57**.
+
+Daí a hipótese a testar: *se o excesso de réplicas é a causa, limitar o autoescalador
+deve melhorar o desempenho.*
+
+### 8.2 O experimento
+
+Única variável alterada: `maxReplicas` de **10 para 6** nos dez HPAs. Tudo o mais
+idêntico — 1000 VUs, três rodadas, reset completo antes de cada uma (base vazia,
+réplicas no mínimo, JVMs recém-iniciadas).
+
+### 8.3 Resultado
+
+| Métrica | `maxReplicas=10` | `maxReplicas=6` | Diferença |
+|---|---|---|---|
+| **P95 geral** | 38,3 ± 3,6 s | **918 ± 194 ms** | **42× melhor** |
+| `{endpoint:timeline}` p95 | 60 s (teto do cliente) | **1.144 ± 378 ms** | > 52× |
+| `{endpoint:consent_check}` p95 | ~11,8 s | **467 ± 36 ms** | 25× melhor |
+| **Taxa de erro** | 22,8 ± 3,7% | **0,00%** | — |
+| **Vazão** | 130 req/s | **1.225 ± 61 req/s** | **9,4× maior** |
+| Pods ativos no pico | 57 | 45 | −21% |
+| CPU do nó no pico | 31.253m (98%) | 30.073m (94%) | −4 p.p. |
+| Eventos anormais de pod | dezenas | 1 | — |
+
+Rodadas individuais (P95 geral / vazão): 1,14 s / 1.158 req/s · 832 ms / 1.240 req/s
+· 781 ms / 1.278 req/s. **Todas com 0,00% de erro e código de saída 0.**
+
+### 8.4 A leitura que importa
+
+O dado decisivo não é a latência — é a **eficiência por núcleo**:
+
+| | Vazão | CPU | **Requisições por núcleo** |
+|---|---|---|---|
+| `maxReplicas=10` | 130 req/s | 31,25 cores | **4,2 req/s** |
+| `maxReplicas=6` | 1.225 req/s | 30,07 cores | **40,7 req/s** |
+
+**Com praticamente a mesma CPU, a configuração de 6 réplicas fez 9,7× mais trabalho
+útil por núcleo.** Ou seja: com 12 pods a mais, o nó não ficou sem capacidade — ele
+passou a **gastar a capacidade consigo mesmo**. Cada réplica adicional traz uma JVM e
+um sidecar Envoy; acima da capacidade do nó, esse custo fixo desloca o trabalho útil,
+e o autoescalador entra em realimentação positiva: vê CPU alta, pede mais réplicas,
+que consomem mais CPU.
+
+A utilização caiu apenas de 98% para 94% — quatro pontos percentuais separam um
+sistema estável de um em colapso. É o comportamento esperado pela teoria de filas
+nas proximidades da saturação, aqui medido em um sistema real.
+
+### 8.5 Afirmação para a defesa
+
+> Reduzir o limite do autoescalador de 10 para 6 réplicas diminuiu o P95 de 38,3 s
+> para 918 ms, eliminou os 22,8% de erro e multiplicou a vazão por 9,4 — com a mesma
+> infraestrutura e a mesma carga. Em um substrato de capacidade fixa, escalar
+> horizontalmente além do que o nó comporta **degrada** o desempenho em vez de
+> melhorá-lo. O autoescalador precisa ser dimensionado para o substrato, e não
+> configurado no máximo por padrão.
+
+**Ressalva honesta:** mesmo na melhor configuração, o P95 de 918 ms permanece acima
+do alvo de projeto de 500 ms (RNF-01), e o da linha do tempo, 1.144 ms, acima dos
+800 ms do RNF-05. Os limites adotados para a PoC (2.000 ms) foram atendidos com
+0,00% de erro e 1.225 req/s sustentados. O que o experimento demonstra é o
+**mecanismo** e o dimensionamento correto — não que o alvo de produção seja
+alcançável neste nó único.
+
+### 8.6 Consequência para os manifestos
+
+O `maxReplicas: 10` de `k8s/2x-*.yaml` foi dimensionado sem referência à capacidade
+do nó. O valor correto depende do substrato:
+
+```
+pods sustentáveis ≈ (núcleos do nó − reserva do sistema) ÷ custo por pod
+```
+
+Com 32 vCPUs e ~45 pods ativos como teto observado, `maxReplicas=6` nos dez serviços
+é o dimensionamento que este nó comporta. Em um cluster com mais nós — ou com
+*Cluster Autoscaler* — o valor seria outro, e é isso que a limitação de nó único
+declarada em `plano-teste-estresse.md` §6 antecipava.
