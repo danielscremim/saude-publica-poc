@@ -8,6 +8,11 @@ cd "$(dirname "$0")"
 : "${BASE_HOST:?Defina BASE_HOST=<IP da VM-1>}"
 KONG_PORT="${KONG_PORT:-8000}"
 ROUNDS="${ROUNDS:-3}"
+# Reset do ambiente na VM-1 antes de CADA rodada, por SSH. Sem isso, duas
+# condicoes variam entre rodadas e contaminam a media: dados acumulados e
+# replicas herdadas do HPA (janela de 300 s > pausa de 180 s).
+#   RESET_SSH=rootmulti@192.168.5.3 ./run-2vm.sh
+RESET_SSH="${RESET_SSH:-}"
 # Cenarios do plano-teste-estresse.md: design(A) load1000(B) ruptura(C) minimizacao(E)
 SCENARIOS="${SCENARIOS:-design load1000 minimizacao}"
 OUT="resultados/$(date +%Y%m%d-%H%M)"; mkdir -p "$OUT"
@@ -17,13 +22,25 @@ E=(-e BASE_HOST="$BASE_HOST" -e KONG_PORT="$KONG_PORT")
 echo "==> Conectividade com http://$BASE_HOST:$KONG_PORT"
 curl -s -o /dev/null -w "   Kong HTTP %{http_code}\n" "http://$BASE_HOST:$KONG_PORT/v1/patients/00000000-0000-0000-0000-000000000000"
 
+resetar() {
+  [ -n "$RESET_SSH" ] || return 0
+  echo "    reset do ambiente na VM-1 (base vazia + replicas no minimo + JVM nova)"
+  ssh -o BatchMode=yes "$RESET_SSH"     'cd ~/saude-publica-poc && ./scripts/reset-ambiente.sh' 2>&1 | sed 's/^/      /'
+}
+
 echo "==> Aquecimento (2 min, descartado)"
-k6 run --quiet "${E[@]}" -e MAX_VUS=50 -e THRESHOLDS=poc load.js >/dev/null 2>&1 || true; sleep 60
+if [ -n "$RESET_SSH" ]; then
+  echo "    (pulado: com reset por rodada o aquecimento global seria apagado;"
+  echo "     a rampa de 2 min de cada rodada cumpre esse papel, igual para todas)"
+else
+  k6 run --quiet "${E[@]}" -e MAX_VUS=50 -e THRESHOLDS=poc load.js >/dev/null 2>&1 || true; sleep 60
+fi
 
 run() { # $1=nome $2..=args k6
   local name="$1"; shift
   local rc
   for r in $(seq 1 "$ROUNDS"); do
+    resetar
     echo "==> $name  rodada $r/$ROUNDS  ($(date +%H:%M:%S))"
     # O k6 sai com codigo 99 quando um threshold nao e atingido. Com
     # `set -e` + pipefail isso abortaria a bateria inteira no meio da
@@ -35,7 +52,9 @@ run() { # $1=nome $2..=args k6
     set -e
     echo "${name},${r},${rc}" >> "$OUT/execucoes.csv"
     [ "$rc" -eq 0 ] || echo "    >> k6 codigo $rc (99 = threshold nao atingido). Registrado; a bateria continua."
-    echo "    pausa 3 min (HPA volta ao minimo)"; sleep 180
+    if [ -z "$RESET_SSH" ]; then
+      echo "    pausa 3 min (HPA volta ao minimo)"; sleep 180
+    fi
   done
 }
 
