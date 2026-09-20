@@ -34,7 +34,12 @@ spec:
     matchLabels:
       version: v1        # label presente so nos 10 microsservicos (nao em kong/kafka/postgres)
   podMetricsEndpoints:
-    - targetPort: 15020
+    # portNumber, NAO targetPort: o targetPort esta depreciado e o
+    # prometheus-operator v0.94 simplesmente NAO gera alvo para ele - o
+    # PodMonitor existe, o seletor casa, e mesmo assim nenhuma metrica de
+    # aplicacao e coletada, em silencio. Verificado em 20/09 consultando
+    # /api/v1/targets: o scrape pool deste PodMonitor nao existia.
+    - portNumber: 15020
       path: /stats/prometheus
       interval: 15s
       scrapeTimeout: 10s
