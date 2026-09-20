@@ -571,3 +571,120 @@ Verificado, para não atribuir a latência ao lugar errado:
 > A terceira via é de infraestrutura: a arquitetura escala horizontalmente, mas um
 > nó único não oferece para onde escalar. Essa limitação está declarada na
 > Metodologia desde o início do experimento.
+
+---
+
+## 10. Cenário C — Ponto de ruptura (20/09/2026)
+
+> Fecha o **Resultado 2**. Executado com taxa de chegada fixa em degraus, após a
+> correção do dimensionamento do autoescalador (§8) e da instrumentação (§10.4).
+
+### 10.1 Por que taxa de chegada e não usuários virtuais
+
+O cenário B usa `ramping-vus`: cada usuário virtual **espera a resposta** antes da
+próxima requisição. Quando o sistema fica lento, ele envia menos — a carga se
+auto-regula e o limite real fica mascarado.
+
+O `ponto-ruptura.js` usa `ramping-arrival-rate`, que fixa a taxa em requisições por
+segundo **independentemente do tempo de resposta**. É o que permite afirmar *"a
+plataforma sustentou N req/s; acima disso, degradou"*.
+
+Dez degraus de 200 a 2.000 req/s, 130 s cada, precedidos de 120 s de aquecimento
+cujas requisições ficam fora das métricas.
+
+### 10.2 A curva — duas execuções independentes
+
+| Degrau | Taxa alvo | P95 execução 1 | P95 execução 2 | Erro |
+|---|---|---|---|---|
+| 0 | 200 req/s | 25,9 ms | 24,9 ms | 0,00% |
+| 1 | 400 | 25,6 ms | 24,5 ms | 0,00% |
+| 2 | 600 | 26,2 ms | 25,9 ms | 0,00% |
+| 3 | 800 | 31,1 ms | 31,6 ms | 0,00% |
+| 4 | 1.000 | 56,4 ms | 59,9 ms | 0,00% |
+| 5 | 1.200 | 128,6 ms | 110,1 ms | 0,00% |
+| **6** | **1.400** | **356,7 ms** | **462,4 ms** | **0,00%** |
+| 7 | 1.600 | 1.400,9 ms | 1.934,8 ms | 0,00% |
+| 8 | 1.800 | 2.430,6 ms | 3.907,0 ms | 0,07% |
+| 9 | 2.000 | 3.003,6 ms | 4.041,6 ms | 0,17% / 0,00% |
+
+Volume: 1.361.096 e 1.295.187 requisições, **nenhuma iteração interrompida**.
+
+**Reprodutibilidade.** Até 1.200 req/s as duas execuções coincidem dentro de poucos
+milissegundos. A divergência cresce depois do joelho — comportamento esperado, porque
+perto da saturação pequenas diferenças de estado se amplificam.
+
+### 10.3 Os três números a reportar
+
+**Capacidade sustentada: 1.400 req/s.** Último degrau com latência de baixa dispersão
+(357 e 462 ms), erro zero e gerador folgado.
+
+**Ruptura pelo critério do plano (P95 ≤ 2.000 ms): entre 1.600 e 1.800 req/s.** O
+degrau de 1.600 fica no limite (1.401 ms e 1.935 ms); o de 1.800 o ultrapassa nas duas
+execuções.
+
+**A degradação é de latência, não de disponibilidade.** Mesmo a 2.000 req/s com P95 de
+4 s, a taxa de erro máxima foi de **0,17%**. A plataforma **enfileirou em vez de
+recusar** — comportamento de sistema com contrapressão, não de sistema que quebra.
+
+> **Ressalva obrigatória:** houve 83.873 e 67.969 `dropped_iterations`. Os usuários
+> virtuais atingiram o teto (1.500 e depois 2.000) a partir do degrau 7, então
+> **acima de 1.600 req/s o gerador também estava no limite**. Os degraus 7 a 9 são
+> limite inferior da latência real. É exatamente o critério previsto em
+> `plano-teste-estresse.md` §4 para invalidar um degrau.
+
+### 10.4 A causa — não é CPU, é fila por conexão de banco
+
+Esta é a diferença entre observar e explicar, e exigiu corrigir três defeitos
+encadeados de instrumentação (§11).
+
+**Estado no pico, por serviço:**
+
+| Serviço | Conexões ativas | Fila aguardando conexão | Threads Tomcat ocupadas |
+|---|---|---|---|
+| `patient-service` | **5 de 5** | **46** | 52 de 200 |
+| `consent-service` | **5 de 5** | **41** | 47 de 200 |
+| `result-service` | 5 de 5 | 1 | 7 de 200 |
+| `history-service` | — (sem banco) | — | 64 de 200 |
+
+**Correlação temporal.** O teste começou às 07:22:06 UTC; com 120 s de aquecimento e
+130 s por degrau, o degrau 6 inicia às 07:37:06:
+
+| Instante | Degrau | Fila por conexão | P95 |
+|---|---|---|---|
+| até 07:37:06 | 0 a 5 (≤ 1.200 req/s) | **0** | ≤ 110 ms |
+| **07:37:33** | 6 (1.400) | **primeira fila: 2** | 462 ms |
+| 07:38–07:39 | 6 | 9 → 13 | — |
+| 07:40–07:41 | 7 (1.600) | **41 → 46** | 1.935 ms |
+
+A primeira fila aparece **27 segundos após o início do degrau de 1.400 req/s**, e a
+latência acompanha na mesma cadência.
+
+**A leitura.** Os pools estavam **completamente ocupados** (5 de 5) com dezenas de
+requisições aguardando, enquanto as threads do servidor operavam a **menos de um
+terço** do limite (64 de 200) e a CPU do nó subia apenas de 74% para 82%.
+
+As threads não estavam trabalhando — estavam **bloqueadas esperando conexão de
+banco**. É o diagnóstico que `plano-teste-estresse.md` §5 define como objetivo:
+
+> *"A plataforma degradou a 1.600 req/s porque o pool de conexões do HikariCP saturou
+> e as requisições passaram a aguardar em fila, com as threads do Tomcat ocupadas em
+> espera de I/O."*
+
+### 10.5 O limite é uma decisão de projeto, e é ajustável
+
+O pool de 5 conexões por instância não é arbitrário: foi dimensionado em §6.1 para
+respeitar o teto do PostgreSQL. O orçamento é
+
+```
+8 serviços com banco × 6 réplicas (maxReplicas) × 5 conexões = 240
+                                    teto configurado: max_connections = 500
+```
+
+Ou seja, **há folga no banco**: o limite atual é o pool da aplicação, não o servidor.
+Elevar o pool de 5 para 10 dobraria o orçamento para 480, ainda dentro dos 500 — e
+deslocaria o ponto de ruptura para cima.
+
+Isso transforma o resultado em recomendação verificável: *o ponto de ruptura desta
+plataforma é determinado pelo dimensionamento do pool de conexões, e há margem
+documentada para elevá-lo*. Fica como trabalho futuro mensurável — e como resposta
+pronta caso a banca pergunte se o limite encontrado é intrínseco. **Não é.**
