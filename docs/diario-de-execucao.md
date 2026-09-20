@@ -216,6 +216,59 @@ adicional traz uma JVM e um sidecar Envoy, **consumindo capacidade sem acrescent
 nenhuma**; ao empurrar a utilização para perto de 100%, a latência de fila cresce de
 forma não-linear. Os 88% já eram a borda.
 
+### 4.6 O cenário C exigiu quatro tentativas — todas por falha de ferramental
+
+Nenhuma das três primeiras mediu o sistema. Vale registrar porque cada uma expõe
+uma classe diferente de erro experimental.
+
+**Tentativa 1 — mediu JVM fria.** Abortou em 31 s, com P95 de 4.692 ms no degrau de
+200 req/s, **taxa de erro 0,00% e o nó a 3% de CPU**. A combinação é o diagnóstico:
+latência altíssima sem erro e sem consumo de CPU não é saturação, é aquecimento.
+
+O executor `ramping-arrival-rate` parte da taxa inicial **instantaneamente**, sem
+rampa, e o teste subiu logo após um reset que recriou todos os pods. O `load.js` do
+cenário B nunca sofreu disso porque sobe de 0 a 1000 VUs em dois minutos. Corrigido
+com uma rampa de aquecimento de 120 s, cujas requisições são marcadas
+`fase:aquecimento` e ficam **fora** das métricas de medição.
+
+> Vira também um achado sobre o RNF-02: **após reiniciar, um pod serve com latência
+> muito alta antes de aquecer**. Num evento de auto-recuperação sob carga, a réplica
+> nova não contribui imediatamente com a mesma capacidade das demais.
+
+**Tentativa 2 — erro que apontava para o lugar errado.** Falhou com
+`401 invalid_client` na obtenção do token. A causa não era credencial: o
+`setupBaseline` **descartava a resposta** do registro do client, e um registro que
+falhou em silêncio apareceu adiante como autenticação inválida. Corrigido com
+verificação de status e reexecução.
+
+**Tentativa 3 — contaminada por carga concorrente.** Mediu P95 de 3.399 ms a
+200 req/s com o nó a 87%. Investigando, havia **um segundo teste de 1000 VUs rodando
+em paralelo**.
+
+A origem é a parte instrutiva: era um lançamento de bateria disparado **três horas
+antes**, que ficou bloqueado num `git pull` (lock de repositório) e disparou sozinho
+quando o lock se liberou — bem no meio do cenário C. Na ocasião o comando parecia não
+ter iniciado, e essa conclusão foi aceita sem verificação.
+
+**Tentativa 4 — com verificação prévia.** Procedimento adotado a partir daqui:
+
+1. confirmar a linha de base — soma das réplicas = 20, CPU do nó baixa, **nenhum
+   processo gerador de carga vivo em nenhuma das VMs**;
+2. disparar o teste desanexado;
+3. **verificar o artefato** que ele deveria ter criado — PID e pasta de resultados —
+   em uma conexão separada;
+4. encerrar a sessão remota pendente, para que ela não possa disparar nada depois.
+
+**Lição metodológica.** Os passos 1, 3 e 4 não são zelo operacional: são
+**pré-requisito de validade**. Um experimento de carga mede o estado do sistema no
+instante da execução, e esse estado inclui tudo o que mais estiver rodando. Duas
+consequências práticas:
+
+- **Silêncio não é evidência de que algo não aconteceu.** Um comando desanexado que
+  parece não ter iniciado pode estar apenas bloqueado, e disparar depois.
+- **Verificar o estado inicial antes de cada medição** — e não apenas ao montar o
+  ambiente — é o que separa um número reprodutível de um artefato.
+
 ---
 
 ## Defeitos encontrados na própria instrumentação
