@@ -51,13 +51,21 @@ spec:
               valueFrom: { configMapKeyRef: { name: shared-config, key: AUDIT_ANOMALY_THRESHOLD } }
             - name: AUDIT_ANOMALY_WINDOW_MINUTES
               valueFrom: { configMapKeyRef: { name: shared-config, key: AUDIT_ANOMALY_WINDOW_MINUTES } }
+          # startupProbe protege o arranque lento da JVM: enquanto ela nao sobe,
+          # readiness e liveness ficam suspensas. Isso permite remover o
+          # initialDelaySeconds de 30 s da readiness, que impunha um PISO de
+          # 30 s ao MTTR independentemente da velocidade do Kubernetes.
+          # Medido em 20/09: substituto criado em 2 s, pronto so aos 42 s -
+          # a espera era da sonda, nao do orquestrador (RNF-02 exige <= 30 s).
+          startupProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8088 }
+            periodSeconds: 5
+            failureThreshold: 30          # ate 150 s para a JVM iniciar
           readinessProbe:
             httpGet: { path: /actuator/health/readiness, port: 8088 }
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            periodSeconds: 5
           livenessProbe:
             httpGet: { path: /actuator/health/liveness, port: 8088 }
-            initialDelaySeconds: 60
             periodSeconds: 30
           resources:
             requests: { cpu: "250m", memory: "512Mi" }
