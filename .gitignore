@@ -20,3 +20,4 @@ tests/k6/resultados-infra/
 # Artefatos de renderizacao do TCC (gerados por docs/gerar-tcc.py)
 TCC_render.pdf
 pg-*.png
+TCC_previa.docx

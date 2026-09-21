@@ -39,7 +39,7 @@ par("Sob 1.000 usuários simultâneos a plataforma sustentou a carga sem perder 
 par("A investigação dessa saturação produziu o resultado mais contraintuitivo do "
     "trabalho. Ao remover uma restrição do sistema operacional que limitava a criação de "
     "proxies laterais, o autoescalador passou a elevar efetivamente o número de réplicas, "
-    "e o desempenho piorou de forma drástica. A Tabela 4 e a Figura 1 comparam as três "
+    "e o desempenho piorou de forma drástica. A Tabela 4 e a Figura 2 comparam as três "
     "configurações observadas.")
 
 tabela(4, "Efeito do dimensionamento do autoescalador sobre o desempenho",
@@ -51,7 +51,7 @@ tabela(4, "Efeito do dimensionamento do autoescalador sobre o desempenho",
        nota="Nota: a razão entre vazão e utilização de processador do nó expressa o "
             "trabalho útil realizado por núcleo")
 
-figura("fig6-eficiencia-por-nucleo.png", 1,
+figura("fig6-eficiencia-por-nucleo.png", 2,
        "Requisições atendidas por segundo por núcleo de processador nas três "
        "configurações do autoescalador",
        largura=11.5)
@@ -69,12 +69,12 @@ par("Com praticamente a mesma utilização de processador, 98% contra 94%, a con
 
 # ---------------------------------------------------------------- 2
 subtitulo("Ponto de ruptura")
-par("A Figura 2 apresenta a curva de saturação obtida em duas execuções independentes. "
+par("A Figura 3 apresenta a curva de saturação obtida em duas execuções independentes. "
     "As curvas coincidem dentro de poucos milissegundos até 1.200 requisições por "
     "segundo; a divergência posterior é esperada, pois nas proximidades da saturação "
     "pequenas diferenças de estado se amplificam.")
 
-figura("fig1-curva-saturacao.png", 2,
+figura("fig1-curva-saturacao.png", 3,
        "Latência no percentil 95 em função da taxa de chegada, em duas execuções "
        "independentes, com o limite adotado para a prova de conceito assinalado")
 
@@ -88,11 +88,11 @@ par("A capacidade sustentada foi de 1.400 requisições por segundo, último deg
     "gerador atingiu seu limite, com 83.873 e 67.969 iterações descartadas nas duas "
     "execuções, de modo que os degraus superiores constituem limite inferior da latência "
     "real.")
-par("A causa da saturação foi isolada e contraria a expectativa usual. A Figura 3 "
+par("A causa da saturação foi isolada e contraria a expectativa usual. A Figura 4 "
     "apresenta, no mesmo eixo de carga e em painéis separados, a latência e o número de "
     "requisições aguardando conexão de banco.")
 
-figura("fig2-fila-conexoes.png", 3,
+figura("fig2-fila-conexoes.png", 4,
        "Latência no percentil 95 e requisições aguardando conexão de banco de dados, "
        "em função da taxa de chegada")
 
@@ -115,11 +115,11 @@ par("Esse limite é ajustável e essa constatação qualifica o resultado. O or�
 # ---------------------------------------------------------------- 3
 subtitulo("Desacoplamento assíncrono")
 par("O comportamento da fila de eventos forneceu a evidência mais direta do "
-    "desacoplamento proporcionado pela comunicação assíncrona. A Figura 4 apresenta o "
+    "desacoplamento proporcionado pela comunicação assíncrona. A Figura 5 apresenta o "
     "acúmulo de registros de auditoria persistidos, com o instante de encerramento da "
     "carga assinalado.")
 
-figura("fig4-drenagem-kafka.png", 4,
+figura("fig4-drenagem-kafka.png", 5,
        "Registros de auditoria persistidos ao longo do tempo, com o instante de "
        "encerramento da carga assinalado")
 
@@ -143,9 +143,9 @@ subtitulo("Elasticidade e resiliência")
 par("Quatro serviços atingiram o número máximo de réplicas, precisamente aqueles do "
     "caminho crítico do cenário, e os mesmos quatro de execução anterior realizada em "
     "substrato distinto, o que sugere que o comportamento decorre do desenho e não da "
-    "infraestrutura. A Figura 5 apresenta a evolução do número de réplicas.")
+    "infraestrutura. A Figura 6 apresenta a evolução do número de réplicas.")
 
-figura("fig3-replicas-hpa.png", 5,
+figura("fig3-replicas-hpa.png", 6,
        "Número de réplicas ativas dos quatro serviços do caminho crítico ao longo da "
        "bateria de carga")
 
@@ -186,6 +186,12 @@ par("A exigência de autenticação mútua entre todos os pares foi verificada d
     "recusa de conexão ao tentar alcançar um serviço interno, enquanto contêiner "
     "equivalente com proxy lateral obteve resposta normal. O tráfego sem identidade é "
     "rejeitado na camada de transporte, antes de alcançar a aplicação.")
+par("A topologia efetivamente em execução foi verificada pela reconstrução "
+    "arquitetural dinâmica descrita na Metodologia. O grafo de dependências derivado "
+    "das chamadas interceptadas pelos proxies laterais durante os cenários de carga "
+    "coincidiu com o projetado, sem arestas inesperadas entre serviços e sem acesso "
+    "de um serviço ao banco de dados de outro, o que confirma a persistência por "
+    "serviço no sistema em execução e não apenas no código (Cerny et al., 2022).")
 par("O controle de acesso à linha do tempo clínica foi verificado nos quatro estados "
     "possíveis. Requisição sem credencial recebeu recusa por ausência de autenticação; "
     "requisição autenticada sem consentimento ativo recebeu recusa por ausência de "
@@ -203,7 +209,10 @@ par("O fluxo de ingestão por instituição externa observou o mesmo rigor. Requ
     "rede.")
 par("A revogação do consentimento tornou-se efetiva em 297 ms, contra o teto de 1.000 ms "
     "estabelecido. A detecção de anomalia operou de forma automática e sem duplicação, "
-    "registrando 29 alertas ao longo de 3.399.128 registros de auditoria acumulados. Por "
+    "registrando 29 alertas ao longo de 3.399.128 registros de auditoria acumulados. O "
+    "resultado materializa a observabilidade aplicada à segurança: o mesmo registro que "
+    "serve à auditoria de conformidade opera como sinal de acesso anômalo, sem "
+    "instrumentação adicional (Ramachandran, 2024). Por "
     "fim, o número de cadastro de pessoa física não apareceu em qualquer resposta de "
     "interface, registro de aplicação ou evento, circulando exclusivamente o identificador "
     "opaco, em conformidade com o princípio da minimização (Brasil, 2018).")
@@ -212,9 +221,9 @@ par("A revogação do consentimento tornou-se efetiva em 297 ms, contra o teto d
 subtitulo("Minimização de dados")
 par("A comparação entre a resposta completa e fixa da interface REST e a consulta "
     "declarativa que especifica apenas os campos necessários à finalidade consta da "
-    "Figura 6. As medições mostraram-se notavelmente estáveis ao longo das três rodadas.")
+    "Figura 7. As medições mostraram-se notavelmente estáveis ao longo das três rodadas.")
 
-figura("fig5-bytes-rest-graphql.png", 6,
+figura("fig5-bytes-rest-graphql.png", 7,
        "Volume de dados por resposta na interface REST e na consulta declarativa, "
        "média de três rodadas",
        largura=8.8)
@@ -267,7 +276,9 @@ par("Cinco limitações delimitam a validade dos resultados e devem acompanhar q
     "permanece como decisão de política, e exercitá-la exigiria modelo de carga com "
     "cardinalidade realista de titulares. Quinto, o rastreamento distribuído não foi "
     "verificado de ponta a ponta, pois os proxies laterais geram os registros mas não há "
-    "propagação explícita de cabeçalhos no código da aplicação.")
+    "propagação explícita de cabeçalhos no código da aplicação; sem o identificador de "
+    "correlação propagado, a reconstrução do percurso completo de uma requisição "
+    "permanece incompleta (Cerny et al., 2022).")
 par("Permanecem identificadas, e não implementadas, quatro otimizações com efeito "
     "esperado sobre os limites medidos: paralelizar as duas chamadas independentes do "
     "agregador; armazenar em memória intermediária a decisão de consentimento, cuja "
@@ -333,6 +344,11 @@ refs = [
     "de Saúde Digital para o Brasil e dispõe sobre a Rede Nacional de Dados em Saúde. "
     "Diário Oficial da União, Brasília, 09 dez. 2022. Seção 1, p. 143.",
 
+    "Cerny, T.; Abdelfattah, A.S.; Bushong, V.; Maruf, A.A.; Taibi, D. 2022. "
+    "Microservice architecture reconstruction and visualization techniques: a "
+    "review. arXiv:2207.02988v2. Disponível em: "
+    "<https://arxiv.org/abs/2207.02988>. Acesso em: 21 set. 2026.",
+
     "Cloud Native Computing Foundation [CNCF]. 2025. Kubernetes Documentation: Horizontal "
     "Pod Autoscaling. Disponível em: "
     "<https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/>. "
@@ -357,6 +373,10 @@ refs = [
 
     "Newman, S. 2021. Building Microservices: Designing Fine-Grained Systems. 2ed. "
     "O'Reilly Media, Sebastopol, CA, EUA.",
+
+    "Ramachandran, R. 2024. Leveraging security observability to strengthen "
+    "security of digital ecosystem architecture. arXiv:2412.05617v1. Disponível "
+    "em: <https://arxiv.org/abs/2412.05617>. Acesso em: 21 set. 2026.",
 
     "Richardson, C. 2019. Microservices Patterns: With Examples in Java. 1ed. Manning "
     "Publications, Shelter Island, NY, EUA.",

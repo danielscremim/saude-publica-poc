@@ -99,6 +99,90 @@ par("O critério de ruptura adotado considerou o primeiro degrau em que ocorress
     "resiliência consistiu na remoção deliberada de uma réplica íntegra durante carga "
     "nominal, com registro dos instantes de criação e de prontidão do substituto.")
 
+subtitulo("Caso de uso guiado")
+par("Para tornar concreto o funcionamento da plataforma, descreve-se o percurso completo "
+    "de um exame, da produção do dado até a sua revogação pelo titular. A Figura 1 "
+    "resume as dez etapas, das quais cinco aplicam um controle de privacidade.")
+
+par("Na produção do dado, o paciente é cadastrado na unidade básica de saúde com o "
+    "número de cadastro de pessoa física, que é imediatamente tokenizado: o serviço de "
+    "cadastro devolve um identificador opaco e o número nacional não deixa mais aquele "
+    "serviço (etapa 1). Segue-se a triagem, com registro de sinais vitais e classificação "
+    "de risco (etapa 2), e a solicitação do exame, que publica um evento no tópico "
+    "correspondente em vez de chamar o laboratório diretamente (etapa 3). O laboratório "
+    "consome esse evento, processa a amostra e publica o resultado como novo evento "
+    "(etapa 4), consumido em paralelo pelo serviço de resultados, que o persiste, e pelo "
+    "serviço de notificação, que avisa o paciente (etapa 5). Nenhuma dessas etapas "
+    "conhece as demais: cada uma reage a um evento, o que permite que o laboratório "
+    "esteja indisponível sem que a solicitação se perca.")
+figura("fig7-caso-de-uso.png", 1,
+       "Percurso de um exame na plataforma, da produção do dado na instituição de "
+       "origem até a revogação do consentimento pelo titular",
+       fonte="Fonte: Elaborada pelo autor")
+
+par("Na distribuição do dado, o paciente registra consentimento para uma instituição "
+    "específica (etapa 6). Quando um hospital privado precisa do histórico, ele "
+    "autentica-se com as próprias credenciais e recebe um token de acesso com escopo "
+    "declarado, exatamente o mesmo mecanismo oferecido a um hospital público (etapa 7). "
+    "De posse do token, consulta a linha do tempo clínica declarando quais campos "
+    "necessita e com qual finalidade (etapa 8). A plataforma verifica o consentimento "
+    "antes de qualquer agregação e, havendo autorização, devolve apenas os campos "
+    "declarados e registra o acesso em log imutável (etapa 9). Se o paciente revogar o "
+    "consentimento, a próxima consulta do mesmo hospital é recusada (etapa 10).")
+par("O ganho arquitetural fica visível ao acrescentar um novo consumidor a esse percurso. "
+    "Um segundo hospital, um laboratório privado ou um painel de vigilância "
+    "epidemiológica não exigem nova integração: bastam o registro de um cliente com o "
+    "escopo apropriado e o consentimento do titular, e as etapas 7 a 10 repetem-se sem "
+    "alteração. É essa uniformidade, e não qualquer tecnologia isolada, o que caracteriza "
+    "a camada de distribuição proposta.")
+
+subtitulo("Técnicas de observabilidade e de verificação arquitetural")
+par("As técnicas empregadas para observar e verificar o sistema são nomeadas a seguir, "
+    "com indicação do ponto do trabalho em que cada uma é utilizada pela primeira vez. "
+    "Adota-se a distinção corrente entre monitoramento, que coleta métricas "
+    "predefinidas e dispara alertas por limiar, e observabilidade, que reúne registros, "
+    "métricas e rastros para explicar por que o sistema se comportou de determinada "
+    "forma (Ramachandran, 2024).")
+par("A primeira técnica é a reconstrução arquitetural dinâmica, isto é, a obtenção da "
+    "arquitetura efetivamente em execução a partir de dados de tempo de execução, em "
+    "oposição à análise estática do código-fonte (Cerny et al., 2022). Ela é utilizada "
+    "pela primeira vez na verificação da topologia implantada: as chamadas entre serviços "
+    "são interceptadas pelo proxy lateral da malha, sem qualquer instrumentação no código "
+    "da aplicação, e a visualização resultante confirma que o grafo de dependências em "
+    "execução corresponde ao projetado. Os autores registram que essa abordagem por malha "
+    "de serviços evita o custo de desenvolvimento das alternativas baseadas em "
+    "interceptadores de aplicação, e que sua limitação é depender de o sistema estar "
+    "implantado e exercitado — motivo pelo qual, neste trabalho, a verificação ocorre sob "
+    "os cenários de carga descritos, e não em repouso.")
+par("A segunda técnica é a coleta de métricas por extração periódica, em que o serviço "
+    "expõe um ponto de coleta e um coletor externo o consulta em intervalo fixo, "
+    "registrando séries temporais de latência, vazão, taxa de erro e utilização de "
+    "recursos (Ramachandran, 2024). É utilizada pela primeira vez na instrumentação do "
+    "lado do servidor, descrita a seguir, e é a origem de todas as séries temporais "
+    "apresentadas nos resultados. A terceira é a sobreposição de dados de desempenho "
+    "sobre a visão arquitetural, prática que Cerny et al. (2022) identificam em "
+    "ferramentas que combinam rastreamento e métricas para exibir o desempenho no próprio "
+    "grafo do sistema; ela é utilizada pela primeira vez na composição do painel de "
+    "observabilidade, que apresenta latência, vazão e número de réplicas por serviço "
+    "sobre a mesma linha do tempo.")
+par("A quarta técnica é a observabilidade aplicada à segurança, que consiste em tratar "
+    "os dados de observabilidade como sinal de segurança, e não apenas de desempenho: "
+    "registros revelam tentativas de autenticação suspeitas e métricas revelam volumes "
+    "anômalos de requisições a um mesmo recurso (Ramachandran, 2024). É utilizada pela "
+    "primeira vez no serviço de auditoria, cuja detecção de anomalia examina a janela "
+    "deslizante de acessos por titular e emite alerta quando o número de consultas excede "
+    "o limiar configurado. O trabalho adota a técnica na sua forma determinística, por "
+    "limiar; a extensão por modelos de aprendizado de máquina sobre os mesmos dados, "
+    "discutida pelo autor, permanece fora do escopo, e a auditoria produzida aqui "
+    "constitui precisamente o conjunto de dados que tal extensão consumiria.")
+par("Por fim, a correlação de registros de uma mesma transação distribuída por meio de "
+    "um identificador propagado entre serviços é apontada como requisito para que "
+    "ferramentas de análise reconstruam o percurso de uma requisição em sistemas "
+    "descentralizados (Cerny et al., 2022). Esta é a única das cinco técnicas não "
+    "verificada de ponta a ponta neste trabalho: os proxies laterais produzem os rastros, "
+    "mas o código da aplicação não propaga explicitamente os cabeçalhos de correlação, "
+    "limitação declarada entre os resultados.")
+
 subtitulo("Instrumentação e tratamento dos dados")
 par("A coleta combinou duas fontes independentes. Do lado do cliente, o gerador de carga "
     "registrou latência por percentil, vazão, taxa de erro e volume de dados por resposta, "

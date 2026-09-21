@@ -31,7 +31,10 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(BASE)
 TPL = os.path.join(RAIZ, "TEMPLATE", "Template TCC_PT (251, 252) (1).docx")
 FIG = os.path.join(BASE, "figuras")
-SAIDA = os.path.join(RAIZ, "TCC_Daniel_Souza_Scremim.docx")
+# TCC_SAIDA permite gerar em outro caminho quando o arquivo final esta
+# aberto no Word e portanto bloqueado para escrita.
+SAIDA = os.environ.get("TCC_SAIDA") or os.path.join(
+    RAIZ, "TCC_Daniel_Souza_Scremim.docx")
 
 ARIAL, CORPO, MIUDA = "Arial", Pt(11), Pt(9)
 PRETO = RGBColor(0, 0, 0)

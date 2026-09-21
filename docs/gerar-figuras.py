@@ -312,9 +312,69 @@ def fig6():
     salvar(fig, "fig6-eficiencia-por-nucleo")
 
 
+# ================================================================ FIGURA 7
+# Caso de uso guiado: as dez etapas do percurso de um exame, da producao do
+# dado na UBS ate a revogacao do consentimento. Nao e um grafico de dados, e
+# um diagrama de fluxo; por isso nao tem eixos.
+def fig7():
+    producao = [
+        ("1", "Cadastro\nna UBS", "CPF → UUID"),
+        ("2", "Triagem", ""),
+        ("3", "Solicitação\ndo exame", ""),
+        ("4", "Laboratório\nprocessa", ""),
+        ("5", "Resultado e\nnotificação", ""),
+    ]
+    distribuicao = [
+        ("6", "Paciente\nconsente", "consent. ativo"),
+        ("7", "Hospital\nautentica", "escopo OAuth2"),
+        ("8", "Consulta a\nlinha do tempo", "campos declarados"),
+        ("9", "Entrega e\nauditoria", "18 ms · log imutável"),
+        ("10", "Paciente\nrevoga", "403 em ≤ 1 s"),
+    ]
+
+    fig, ax = plt.subplots(figsize=(7.0, 3.6))
+    ax.set_xlim(0, 10); ax.set_ylim(1.6, 9.9); ax.axis("off")
+
+    LARG, ALT = 1.66, 1.5
+
+    def faixa(itens, y, titulo, subtitulo):
+        ax.text(0.15, y + ALT + 0.95, titulo, fontsize=9, fontweight="bold",
+                color=TINTA)
+        ax.text(0.15, y + ALT + 0.38, subtitulo, fontsize=8, color=TINTA2)
+        for i, (num, rotulo, marca) in enumerate(itens):
+            x = 0.15 + i * (LARG + 0.30)
+            ax.add_patch(plt.Rectangle((x, y), LARG, ALT, facecolor=SUP,
+                                       edgecolor=TINTA, linewidth=1.2))
+            ax.text(x + 0.16, y + ALT - 0.26, num, fontsize=8,
+                    fontweight="bold", color=S[0], va="center")
+            ax.text(x + LARG / 2, y + ALT / 2 - 0.16, rotulo, fontsize=8.5,
+                    ha="center", va="center", color=TINTA)
+            if marca:
+                ax.text(x + LARG / 2, y - 0.32, marca, fontsize=7.5,
+                        ha="center", va="center", color=S[0])
+            if i < len(itens) - 1:
+                ax.annotate("", xy=(x + LARG + 0.28, y + ALT / 2),
+                            xytext=(x + LARG + 0.02, y + ALT / 2),
+                            arrowprops=dict(arrowstyle="->", color=TINTA,
+                                            lw=1.1))
+
+    faixa(producao, 7.3, "Produção do dado",
+          "instituição de origem, pública ou privada")
+    # A numeracao 1-10 ja carrega a ordem; uma seta entre as faixas so
+    # atravessaria o texto.
+    ax.text(0.15, 6.45, "o dado permanece armazenado até que um consumidor "
+                        "autorizado o solicite", fontsize=8, color=TINTA2)
+    faixa(distribuicao, 3.05, "Distribuição do dado",
+          "instituição consumidora, sob consentimento do titular")
+
+    ax.text(0.15, 1.95, "Em azul, o controle de privacidade aplicado na etapa",
+            fontsize=7.5, color=S[0])
+    salvar(fig, "fig7-caso-de-uso")
+
+
 if __name__ == "__main__":
     print("Gerando figuras em docs/figuras/")
-    for f in (fig1, fig2, fig3, fig4, fig5, fig6):
+    for f in (fig1, fig2, fig3, fig4, fig5, fig6, fig7):
         try:
             f()
         except Exception as e:
