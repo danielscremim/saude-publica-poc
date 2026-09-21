@@ -97,7 +97,7 @@ def fig1():
     ax.plot(x2, y2, "-s", color=S[1], lw=2, ms=5, label="Execução 2")
 
     ax.axhline(2000, color=TINTA2, ls="--", lw=1)
-    ax.text(230, 2120, "limite adotado para a PoC: 2.000 ms",
+    ax.text(230, 2120, "limite adotado: 2.000 ms",
             color=TINTA2, fontsize=8)
 
     ax.axvline(1400, color=GRADE, lw=8, zorder=0)
@@ -108,7 +108,7 @@ def fig1():
 
     eixos(ax)
     ax.set_xlabel("Taxa de chegada (requisições por segundo)")
-    ax.set_ylabel("Latência P95 (ms)")
+    ax.set_ylabel("Latência no percentil 95 (ms)")
     ax.set_xticks(x2)
     mil = FuncFormatter(lambda v, _: f"{v:,.0f}".replace(",", "."))
     ax.yaxis.set_major_formatter(mil)
@@ -146,7 +146,7 @@ def fig2():
                                  gridspec_kw={"height_ratios": [1.3, 1]})
     a1.plot(DEGRAUS[:len(p95)], p95, "-o", color=S[0], lw=2, ms=5)
     a1.axhline(2000, color=TINTA2, ls="--", lw=1)
-    a1.set_ylabel("Latência P95 (ms)")
+    a1.set_ylabel("Latência no percentil 95 (ms)")
     eixos(a1)
 
     cores = [S[1] if fila[d] > 0 else GRADE for d in range(len(DEGRAUS))]
@@ -189,6 +189,8 @@ def fig3():
         serie[r[1]][0].append(m)
         serie[r[1]][1].append(v)
 
+    NOMES = {"history-service": "histórico", "consent-service": "consentimento",
+             "patient-service": "cadastro", "result-service": "resultados"}
     fig, ax = plt.subplots(figsize=(6.8, 3.9))
     # Rotulo direto e impossivel aqui: as quatro series convergem para 10
     # replicas e os textos se sobrepoem. A identidade fica na legenda, que
@@ -198,14 +200,16 @@ def fig3():
         if not x:
             continue
         ax.step(x, y, where="post", color=S[i], lw=1.8,
-                label=s.replace("-service", ""))
+                label=NOMES[s])
 
     ax.axvspan(0, 10, color=GRADE, alpha=0.45, zorder=0)
     for lim in (10, 46):
         ax.axvline(lim, color=GRADE, ls=":", lw=1, zorder=0)
     ax.text(5, 10.7, "aquec.", ha="center", fontsize=8, color=TINTA2)
-    ax.text(28, 10.7, "cenário A — 150 VUs", ha="center", fontsize=8, color=TINTA2)
-    ax.text(66, 10.7, "cenário B — 1000 VUs", ha="center", fontsize=8, color=TINTA2)
+    ax.text(28, 10.7, "carga de referência\n150 usuários", ha="center",
+            fontsize=8, color=TINTA2)
+    ax.text(66, 10.7, "carga nominal\n1.000 usuários", ha="center",
+            fontsize=8, color=TINTA2)
 
     eixos(ax)
     ax.set_xlabel("Tempo desde o início da bateria (min)")
@@ -270,7 +274,7 @@ def fig5():
     b = ax.bar(rot, val, width=0.55, color=[S[0], S[2]])
     for r, v in zip(b, val):
         ax.text(r.get_x() + r.get_width() / 2, v + 90,
-                f"{v:,.0f} B".replace(",", "."), ha="center", fontsize=9,
+                f"{v:,.0f} bytes".replace(",", "."), ha="center", fontsize=9,
                 color=TINTA)
     # Seta no vao entre as barras: sobre a barra ela cruzaria o rotulo de valor.
     ax.annotate("", xy=(0.5, 2651.7), xytext=(0.5, 5522.3),
@@ -286,7 +290,8 @@ def fig5():
 # ================================================================ FIGURA 6
 # Eficiencia por nucleo. A mensagem e que MAIS pods produziram MENOS trabalho.
 def fig6():
-    rot = ["43 pods\n(19/09)", "45 pods\n(maxReplicas=6)", "57 pods\n(maxReplicas=10)"]
+    rot = ["43 réplicas\n(bateria inicial)", "45 réplicas\n(limite de seis)",
+           "57 réplicas\n(limite de dez)"]
     # vazao (req/s) / CPU do no (nucleos) no pico de cada execucao
     val = [1324.9 / 28.07, 1225.2 / 30.07, 130.0 / 31.25]
     cor = [S[0], S[0], S[1]]
@@ -298,7 +303,7 @@ def fig6():
                 ha="center", fontsize=9, color=TINTA)
 
     eixos(ax)
-    ax.set_ylabel("Requisições por segundo\npor núcleo de CPU")
+    ax.set_ylabel("Requisições por segundo\npor núcleo de processador")
     ax.set_ylim(0, 60)
     ax.plot([0, 1], [55, 55], color=TINTA2, lw=0.8)
     ax.text(0.5, 56.2, "configurações saudáveis", ha="center", fontsize=8,
