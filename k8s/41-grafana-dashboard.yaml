@@ -1,0 +1,272 @@
+# Painel Grafana da plataforma — RNF-04 (observabilidade).
+#
+# POR QUE COMO ConfigMap E NAO CLICADO NA INTERFACE: um painel criado a mao existe
+# so naquela instalacao e desaparece se o Grafana for reinstalado. Versionado aqui,
+# e reproduzivel e revisavel junto com o resto da arquitetura.
+#
+# O sidecar do kube-prometheus-stack adota qualquer ConfigMap do namespace com o
+# rotulo grafana_dashboard="1" - verificado nos 25 paineis que ja vieram na entrega.
+#
+# ATENCAO - este painel e artefato OPERACIONAL, nao figura de publicacao. As figuras
+# do trabalho sao geradas por docs/gerar-figuras.py, em vetorial e reproduziveis a
+# partir de CSV. Captura de tela deste painel serve como evidencia da camada de
+# observabilidade, em anexo, nao como grafico de resultado.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: saude-poc-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  saude-poc-rnfs.json: |
+    {
+      "uid": "saude-poc-rnfs",
+      "title": "Saude PoC — RNFs da plataforma",
+      "tags": ["saude-poc", "tcc", "rnf"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "10s",
+      "time": { "from": "now-30m", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "label": "Fonte de dados",
+            "current": {},
+            "hide": 0
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "row", "id": 100, "title": "RNF-01 — Escalabilidade",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "collapsed": false
+        },
+        {
+          "id": 1, "type": "timeseries",
+          "title": "Latência P95 por serviço (alvo de projeto: 500 ms)",
+          "description": "Medida no sidecar Envoy, portanto inclui o custo da malha. A linha de 500 ms é o alvo do RNF-01; 2.000 ms é o limite adotado para a PoC.",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (destination_service_name, le) (rate(istio_request_duration_milliseconds_bucket{destination_service_namespace=\"saude-poc\"}[1m])))",
+              "legendFormat": "{{destination_service_name}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "custom": { "lineWidth": 2, "fillOpacity": 0 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "#eda100", "value": 500 },
+                  { "color": "#e34948", "value": 2000 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] } }
+        },
+        {
+          "id": 2, "type": "timeseries",
+          "title": "Vazão total (requisições por segundo)",
+          "description": "Soma das requisições atendidas no namespace. Referência medida: 428 req/s com 150 usuários; 1.325 req/s com 1000; capacidade sustentada de 1.400 req/s.",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\"}[1m]))",
+              "legendFormat": "total"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 10 } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        },
+        {
+          "type": "row", "id": 101, "title": "RNF-02 — Disponibilidade e elasticidade",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }, "collapsed": false
+        },
+        {
+          "id": 3, "type": "timeseries",
+          "title": "Taxa de erro 5xx (limite: 1%)",
+          "description": "Proporção de respostas 5xx. Durante a falha provocada o valor medido foi de 0,011%, uma ordem de grandeza abaixo dos 0,1% que uma meta de 99,9% tolera.",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\",response_code=~\"5..\"}[1m])) / clamp_min(sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\"}[1m])), 0.001)",
+              "legendFormat": "erro 5xx"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit", "min": 0,
+              "custom": { "lineWidth": 2, "fillOpacity": 10 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "#e34948", "value": 0.01 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        },
+        {
+          "id": 4, "type": "timeseries",
+          "title": "Réplicas por serviço (mínimo 2, máximo 6)",
+          "description": "O máximo de 6 é valor MEDIDO, não arbitrado: com 10 réplicas o nó de 32 vCPUs saturou e a vazão caiu 9,4 vezes. Ver docs/resultados-bateria-carga.md §8.",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "kube_deployment_status_replicas{namespace=\"saude-poc\"}",
+              "legendFormat": "{{deployment}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short", "min": 0, "decimals": 0,
+              "custom": { "lineWidth": 2, "fillOpacity": 0, "lineInterpolation": "stepAfter" }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] } }
+        },
+        {
+          "type": "row", "id": 102, "title": "Diagnóstico — onde o sistema satura",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }, "collapsed": false
+        },
+        {
+          "id": 5, "type": "timeseries",
+          "title": "Requisições aguardando conexão de banco",
+          "description": "É AQUI que a plataforma rompe. Medido: fila zero até 1.200 req/s; a 1.600 req/s o pool satura (5 de 5 ocupadas) com 46 requisições na fila, e a latência salta de 357 ms para 1.401 ms — com a CPU subindo apenas de 74% para 82%.",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (hikaricp_connections_pending{namespace=\"saude-poc\"})",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short", "min": 0,
+              "custom": { "lineWidth": 2, "fillOpacity": 20 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "#e34948", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] } }
+        },
+        {
+          "id": 6, "type": "timeseries",
+          "title": "Conexões ativas por serviço (pool = 5)",
+          "description": "Orçamento total: 8 serviços x 6 réplicas x 5 conexões = 240, contra max_connections=500 no PostgreSQL. Há folga documentada para elevar o pool.",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (hikaricp_connections_active{namespace=\"saude-poc\"})",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "short", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 0 } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        },
+        {
+          "id": 7, "type": "timeseries",
+          "title": "Threads do servidor ocupadas (limite: 200)",
+          "description": "Contraprova do diagnóstico: no ponto de ruptura o pico foi de 64 de 200. As threads não estavam trabalhando — estavam bloqueadas aguardando conexão de banco.",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (tomcat_threads_busy_threads{namespace=\"saude-poc\"})",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short", "min": 0, "max": 200,
+              "custom": { "lineWidth": 2, "fillOpacity": 0 }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        },
+        {
+          "type": "row", "id": 103, "title": "Desacoplamento assíncrono e recursos",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 }, "collapsed": false
+        },
+        {
+          "id": 8, "type": "timeseries",
+          "title": "Fila de eventos por consumir (Kafka)",
+          "description": "Evidência do desacoplamento: sob sobrecarga a ingestão continua aceitando enquanto a fila acumula, e drena depois sem perder evento. Medido: 1,4 milhão de eventos drenados em 26 min após o fim da carga.",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (kafka_consumer_fetch_manager_records_lag{namespace=\"saude-poc\"})",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short", "min": 0,
+              "custom": { "lineWidth": 2, "fillOpacity": 20 }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] } }
+        },
+        {
+          "id": 9, "type": "timeseries",
+          "title": "Memória de heap por serviço",
+          "description": "Apoio diagnóstico. Um serviço próximo do limite com pausas longas de coleta de lixo explica latência que não se explica por CPU nem por pool.",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (jvm_memory_used_bytes{namespace=\"saude-poc\",area=\"heap\"})",
+              "legendFormat": "{{service}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "bytes", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 0 } },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        }
+      ]
+    }
