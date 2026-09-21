@@ -341,15 +341,31 @@ E três defeitos **na própria instrumentação**, todos silenciosos:
 
 ---
 
-## 10. Figuras sugeridas e origem dos dados
+## 10. Figuras — geradas e prontas para inserir
 
-| Figura | Dados | Arquivo |
+Arquivos em `docs/figuras/`, em **SVG e PDF vetoriais** (escalam sem perda na
+impressao) e PNG para conferencia rapida. Regeraveis com `python docs/gerar-figuras.py`
+a partir dos CSVs em `docs/dados-figuras/`.
+
+| Figura | O que mostra | Onde usar |
 |---|---|---|
-| Curva de saturação (P95 × taxa) | 10 degraus, 2 execuções | `ruptura-degraus.csv` |
-| Fila de conexões × latência, no tempo | `hikari_pendentes` por serviço | `pools.csv` |
-| Réplicas × tempo (HPA) | contagem por serviço | `hpa.csv` |
-| Drenagem da fila Kafka após a carga | lag e linhas de auditoria | `kafka-lag.csv`, `tabelas.csv` |
-| Bytes por resposta: REST × GraphQL | `resp_bytes` por endpoint | `resumo.csv` |
-| Eficiência por núcleo: 43/45 × 57 pods | vazão e CPU | `nodes.csv`, `pods.csv` |
+| `fig1-curva-saturacao` | P95 por taxa de chegada, duas execucoes, com o limite de 2.000 ms e a capacidade sustentada marcados | Resultado 2 |
+| `fig2-fila-conexoes` | Latencia e fila por conexao no mesmo eixo de carga, em paineis separados | Resultado 2 — a causa |
+| `fig3-replicas-hpa` | Replicas dos quatro servicos do caminho quente ao longo da bateria | Resultado 3 |
+| `fig4-drenagem-kafka` | Registros de auditoria acumulados, com o instante em que a carga encerrou | Resultado 2 — desacoplamento |
+| `fig5-bytes-rest-graphql` | Bytes por resposta, REST contra GraphQL declarado | Resultado 5 |
+| `fig6-eficiencia-por-nucleo` | Requisicoes por segundo por nucleo nas tres configuracoes | Resultado 1 |
 
-Artefatos em `tests/k6/resultados/` (VM-2) e `tests/k6/resultados-infra/` (VM-1).
+**Decisoes de apresentacao adotadas, caso a banca pergunte:**
+
+- **Nenhum grafico de eixo duplo.** A figura 2 precisaria de dois eixos y (latencia e
+  fila); em vez disso usa dois paineis com o mesmo eixo x. Eixo duplo permite
+  sugerir correlacoes que os dados nao sustentam, ao escolher escalas convenientes.
+- **Paleta verificada para daltonismo** (separacao acima do piso em todos os pares
+  adjacentes, nos modos de visao normal, protanopia e tritanopia) e identidade nunca
+  so por cor: toda figura com duas ou mais series tem legenda ou rotulo direto.
+- **Escala linear em todas as latencias.** Escala logaritmica achataria visualmente a
+  explosao de latencia entre 1.400 e 1.600 req/s, que e justamente o resultado.
+
+Dados de origem em `docs/dados-figuras/`; artefatos completos em
+`tests/k6/resultados/` (VM-2) e `tests/k6/resultados-infra/` (VM-1).
