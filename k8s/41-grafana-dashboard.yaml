@@ -107,13 +107,13 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\",response_code=~\"5..\"}[1m])) / clamp_min(sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\"}[1m])), 0.001)",
+              "expr": "sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\",response_code=~\"5..\"}[1m])) / sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\"}[1m]))",
               "legendFormat": "erro 5xx"
             }
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "percentunit", "min": 0,
+              "unit": "percentunit", "min": 0, "max": 0.05,
               "custom": { "lineWidth": 2, "fillOpacity": 10 },
               "thresholds": {
                 "mode": "absolute",
