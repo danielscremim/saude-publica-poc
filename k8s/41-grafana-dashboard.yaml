@@ -78,14 +78,19 @@ data:
         {
           "id": 2, "type": "timeseries",
           "title": "Vazão total (requisições por segundo)",
-          "description": "Soma das requisições atendidas no namespace. Referência medida: 428 req/s com 150 usuários; 1.325 req/s com 1000; capacidade sustentada de 1.400 req/s.",
+          "description": "Duas series na MESMA unidade. A do gateway e a vazao que o cliente percebe - comparavel com os 428 e 1.325 req/s do trabalho. A total conta cada salto interno da malha e fica varias vezes maior: a diferenca entre as duas e o leque de chamadas do agregador.",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "targets": [
             {
               "refId": "A",
+              "expr": "sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\",destination_service_name=\"kong\"}[1m]))",
+              "legendFormat": "no gateway (o que o cliente ve)"
+            },
+            {
+              "refId": "B",
               "expr": "sum(rate(istio_requests_total{destination_service_namespace=\"saude-poc\"}[1m]))",
-              "legendFormat": "total"
+              "legendFormat": "total na malha (inclui chamadas internas)"
             }
           ],
           "fieldConfig": {
