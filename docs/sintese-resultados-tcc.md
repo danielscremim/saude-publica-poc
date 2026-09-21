@@ -355,6 +355,7 @@ a partir dos CSVs em `docs/dados-figuras/`.
 | `fig4-drenagem-kafka` | Registros de auditoria acumulados, com o instante em que a carga encerrou | Resultado 2 — desacoplamento |
 | `fig5-bytes-rest-graphql` | Bytes por resposta, REST contra GraphQL declarado | Resultado 5 |
 | `fig6-eficiencia-por-nucleo` | Requisicoes por segundo por nucleo nas tres configuracoes | Resultado 1 |
+| `fig7-painel-grafana.jpg` | Painel de observabilidade sob carga de 400 usuarios virtuais | **Anexo** — evidencia do RNF-04 |
 
 **Decisoes de apresentacao adotadas, caso a banca pergunte:**
 
@@ -366,6 +367,17 @@ a partir dos CSVs em `docs/dados-figuras/`.
   so por cor: toda figura com duas ou mais series tem legenda ou rotulo direto.
 - **Escala linear em todas as latencias.** Escala logaritmica achataria visualmente a
   explosao de latencia entre 1.400 e 1.600 req/s, que e justamente o resultado.
+
+**Sobre a figura 7 — ela nao e grafico de resultado, e evidencia de instrumentacao.**
+Captura do painel `saude-poc-rnfs` durante carga de 400 usuarios virtuais
+(501.202 requisicoes, 926 req/s, P95 de 253,3 ms, 0,00% de erro). Vai em **anexo**,
+para demonstrar que a camada de observabilidade existe e opera, e nao no corpo dos
+Resultados, onde os numeros devem vir das figuras vetoriais reproduziveis.
+
+O que a captura mostra em funcionamento, simultaneamente: latencia P95 por servico,
+vazao separada entre gateway e malha, taxa de erro, replicas escalando de 2 para 6,
+**fila aguardando conexao de banco**, conexoes ativas, threads do servidor, fila de
+eventos do Kafka e memoria de heap.
 
 Dados de origem em `docs/dados-figuras/`; artefatos completos em
 `tests/k6/resultados/` (VM-2) e `tests/k6/resultados-infra/` (VM-1).
