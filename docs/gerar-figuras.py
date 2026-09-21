@@ -25,29 +25,41 @@ SAIDA = os.path.join(BASE, "figuras")
 os.makedirs(SAIDA, exist_ok=True)
 
 # ---------------------------------------------------------------- estilo
-SUP = "#fcfcfb"        # superficie
-TINTA = "#0b0b0b"      # texto primario
-TINTA2 = "#52514e"     # texto secundario
-GRADE = "#dddcd8"
+# Conforme a Tabela 8 do Manual de Normas USP/Esalq: graficos SEM linhas de
+# grade, SEM borda, SEM preenchimento e SEM titulo (o titulo vai na legenda,
+# abaixo da figura, no documento). Eixos principais em linha solida preta de
+# 1,5 pt e titulos de eixo em Arial tamanho 11 ou menor, cor preta.
+SUP = "#ffffff"        # sem preenchimento
+TINTA = "#000000"      # cor preta, exigida pela norma
+TINTA2 = "#000000"
+GRADE = "#bfbfbf"      # usado apenas em marcacoes auxiliares, nunca como grade
 S = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]   # categoricas, ordem fixa
 
 plt.rcParams.update({
     "figure.facecolor": SUP, "axes.facecolor": SUP, "savefig.facecolor": SUP,
-    "font.size": 9, "axes.labelsize": 9, "axes.titlesize": 10,
+    "font.family": "Arial",
+    "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+    "font.size": 10, "axes.labelsize": 11, "axes.titlesize": 11,
     "axes.labelcolor": TINTA, "text.color": TINTA,
-    "xtick.color": TINTA2, "ytick.color": TINTA2,
-    "axes.edgecolor": GRADE, "axes.linewidth": 0.8,
-    "grid.color": GRADE, "grid.linewidth": 0.6,
-    "legend.frameon": False, "figure.dpi": 150,
+    "xtick.color": TINTA, "ytick.color": TINTA,
+    "xtick.labelsize": 9, "ytick.labelsize": 9,
+    "axes.edgecolor": TINTA, "axes.linewidth": 1.5,
+    "axes.grid": False,
+    "legend.frameon": False, "legend.fontsize": 9,
+    "figure.dpi": 200, "savefig.dpi": 200,
 })
 
 
 def eixos(ax):
-    """Grade recessiva, sem molduras supérfluas."""
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.7)
-    ax.set_axisbelow(True)
+    """Apenas os eixos principais, em linha solida preta de 1,5 pt (norma)."""
+    for lado in ("top", "right"):
+        ax.spines[lado].set_visible(False)
+    for lado in ("bottom", "left"):
+        ax.spines[lado].set_visible(True)
+        ax.spines[lado].set_color(TINTA)
+        ax.spines[lado].set_linewidth(1.5)
+    ax.grid(False)
+    ax.tick_params(colors=TINTA, width=1.2)
 
 
 def salvar(fig, nome):
@@ -135,8 +147,6 @@ def fig2():
     a1.plot(DEGRAUS[:len(p95)], p95, "-o", color=S[0], lw=2, ms=5)
     a1.axhline(2000, color=TINTA2, ls="--", lw=1)
     a1.set_ylabel("Latência P95 (ms)")
-    a1.set_title("Latência e fila por conexão de banco, sob a mesma carga",
-                 loc="left", pad=8)
     eixos(a1)
 
     cores = [S[1] if fila[d] > 0 else GRADE for d in range(len(DEGRAUS))]
