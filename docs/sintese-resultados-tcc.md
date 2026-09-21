@@ -368,9 +368,33 @@ a partir dos CSVs em `docs/dados-figuras/`.
 - **Escala linear em todas as latencias.** Escala logaritmica achataria visualmente a
   explosao de latencia entre 1.400 e 1.600 req/s, que e justamente o resultado.
 
+### Fila de conexoes: regime estacionario x transiente de escalonamento
+
+Os dois numeros abaixo parecem contraditorios e **nao sao** — medem fenomenos
+diferentes. Declarar a distincao evita que a captura do painel pareca desmentir a
+curva de degraus.
+
+| | Carga | Replicas | Pico de fila |
+|---|---|---|---|
+| **Regime estacionario** (cenario C, degraus) | 1.600 req/s | ja escaladas | **46** (patient) e **41** (consent) |
+| **Transiente de escalonamento** (figura 7) | 926 req/s | subindo de 2 para 6 | **91** (consent), pico em pod unico: 64 |
+
+A fila foi **maior com metade da carga**, porque o pico ocorreu enquanto o
+autoescalador subia as replicas. Durante essa janela, **duas replicas com pool de 5
+absorvem a carga inteira** — dez conexoes no total — e as novas levam os 28,5 s de
+arranque da JVM (secao 4.2) para comecar a ajudar.
+
+**Isso conecta tres achados independentes:** o dimensionamento do pool, o tempo de
+arranque da JVM e a reacao do autoescalador. O momento de maior estresse sobre o pool
+**nao e a carga maxima — e a subida**, quando a capacidade instalada ainda nao
+acompanhou a demanda.
+
+Ao citar a fila de conexoes no texto, dizer de qual dos dois regimes se trata.
+
 **Sobre a figura 7 — ela nao e grafico de resultado, e evidencia de instrumentacao.**
 Captura do painel `saude-poc-rnfs` durante carga de 400 usuarios virtuais
-(501.202 requisicoes, 926 req/s, P95 de 253,3 ms, 0,00% de erro). Vai em **anexo**,
+(501.202 requisicoes, 926 req/s, P95 de 253,3 ms, 0,00% de erro), **durante a subida
+do autoescalador** - ver a distincao acima. Vai em **anexo**,
 para demonstrar que a camada de observabilidade existe e opera, e nao no corpo dos
 Resultados, onde os numeros devem vir das figuras vetoriais reproduziveis.
 
